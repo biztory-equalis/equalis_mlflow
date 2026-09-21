@@ -1,0 +1,30 @@
+{
+  "id": "6245de3a-28e8-4fc7-a59d-1f54747d3c6b",
+  "bedrag": "500,45",
+  "Gerechterlijk Minnelijk": "Gerechtelijk",
+  "Verweerder Postcode": "1050",
+  "Verweerder Geboortedatum": "1960-01-01",
+  "shared_adress_count": 6,
+  "Verweerder B2B": true,
+  "Verweerder Straat": "Test straat",
+  "Verweerder Nr": "89/b",
+  "Verweerder Postcode": 9000,
+  "Verweerder Gemeente": "Gent",
+  "Verweerder Provincie": "Antwerpen",
+  "Aanlegger": "ENECO BELGIUM",
+  "tcbb": [
+    {
+      "Bedrag": "0,00",
+      "Beslagen goederen": "Renault Kangoo, huisraad, ..."
+    }, {
+      "Bedrag": "7450,00",
+      "Beslagen goederen": ""
+    }, {
+      "Bedrag": "0,00",
+      "Beslagen goederen": "terreinwagen Jeep Grand Cherokee met nummerplaat 1 UEU 331, flatscreen televisie Philips,vierkante eetkamertafel met 8 bijhorende lederen stoelen met hoge rug,spiegel in houten kader,..."
+    }, {
+      "Bedrag": "0,00",
+      "Beslagen goederen": "ALLE SOMMEN DIE TOEKOMEN AAN DE BESLAGENE"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+DATASET: dossiers
+GENERATED_AT: 2026-09-21
+HASH_ID: acb3772ef4715198
+----------------------------------------
+SQL QUERY:
+SELECT 
+    hoofddossier_id,
+    hoofddossier_flag,
+    factuurbedrag,
+    betaling_klant,
+    bedrag,
+    booking_code,
+    booking_dut,
+    dossier_status,
+    dossier_status_code,
+    solvabiliteit_dossier,
+    dossier_solvabiliteit,
+    creatiedatum_hoofddossier,
+    datumboeking,
+    creatiedatum_dossierlijn,
+    gerechterlijk_minnelijk,
+FROM DOSSIERS
+WHERE hoofddossier_id IN (SELECT hoofddossier_id
+FROM VERWEERDER
+GROUP BY hoofddossier_id
+HAVING COUNT(DISTINCT verweerder_id) = 1 AND MAX(verweerder_id) != 0) 
+-- AND solvabiliteit_dossier IS NOT NULL
+AND hoofddossier_flag = 1
+-- AND creatiedatum_hoofddossier >= %(date)s;
+AND dossier_status_code IN ('STPOPD', 'REGLE', 'TERU', 'GESM', 'STPZ', 'GZ')
+----------------------------------------

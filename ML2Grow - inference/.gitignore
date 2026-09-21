@@ -1,0 +1,8 @@
+.env
+*.p8
+*.pem
+*.key
+*.pub
+
+# locally-trained baseline model (train_baseline_model.py) — not the real model
+random_forest_classifier.pkl

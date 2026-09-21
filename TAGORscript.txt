@@ -1,0 +1,3798 @@
+﻿///$tab Main
+SET ThousandSep='.';
+SET DecimalSep=',';
+SET MoneyThousandSep='.';
+SET MoneyDecimalSep=',';
+SET MoneyFormat='€ #.##0,00;€ -#.##0,00';
+SET TimeFormat='h:mm:ss';
+SET DateFormat='D/MM/YYYY';
+SET TimestampFormat='D/MM/YYYY h:mm:ss[.fff]';
+SET MonthNames='jan;feb;mrt;apr;mei;jun;jul;aug;sep;okt;nov;dec';
+SET DayNames='ma;di;wo;do;vr;za;zo';
+
+
+Let vThisYear = Year(Today());
+Let vNumberOfYears = 10;
+let vStartYear = $(vThisYear)-$(vNumberOfYears)+1; //previous 4 years + current year 
+
+//////////////////////////////////////////////////////////////////////
+//																	//
+//					get parameters									//
+//																	//
+//////////////////////////////////////////////////////////////////////
+
+connections:
+LOAD 	
+ 	 DB, 
+     String
+FROM
+[..\PARAMETERS\Tagor-parameters.xlsx]
+(ooxml, embedded labels, table is Connections);
+
+for vTeller = 0 to NoOfRows('connections')-1
+
+	Let vDB = peek('DB',$(vTeller),'connections');
+	
+	tt_connect:
+	NoConcatenate
+	load
+		*
+	Resident connections
+		where DB = '$(vDB)';
+	
+	let v$(vDB) = peek('String',0,'tt_connect');
+
+	drop Table tt_connect;
+	
+next
+
+drop Table connections;
+
+Directory QVD_Tagor;
+///$tab parameters
+//////////////////////////////////////////////////////////////
+//															//
+//					verschillende variabelen				//
+//															//
+//////////////////////////////////////////////////////////////
+
+variables:
+LOAD 
+	 variable_name, 
+     variable_content
+FROM
+[..\..\PARAMETERS\Tagor-parameters.xlsx]
+(ooxml, embedded labels, table is Variables);
+
+for vRow = 0 to NoOfRows('variables')-1
+
+	let vVariable 	 = peek('variable_name',$(vRow),'variables');
+	let $(vVariable) = peek('variable_content',$(vRow),'variables');
+
+next
+
+
+///$tab mapping
+color:
+mapping
+LOAD * INLINE [
+    color_code, rgb_code
+    0, "0,0,0"
+    1, "0,0,128"
+    2, "0,128,0"
+    3, "0,128,128"
+    4, "128,0,0"
+    5, "128,0,128"
+    6, "128,128,0"
+    7, "128,128,128"
+    8, "192,192,192"
+    9, "0,0,255"
+    10, "0,255,0"
+    11, "0,255,255"
+    12, "255,0,0"
+    13, "255,0,255"
+    14, "255,255,0"
+    15, "255,255,255"
+];
+
+map_status:
+Mapping
+load * Inline [
+	 ID, Omschr
+	 TQSTATUS_ID, Status
+	 TQSTATUS_ID_STADIUM, Stadium
+	 TQSTATUS_ID_ALARM, Alarm
+	 TQSTATUS_ID_AFBET, Afbet
+	 TQSTATUS_ID_KLANT, Kant
+	 TQSTATUS_ID_STOP, Stop
+];
+///$tab sub
+sub translate(vLanguage, vSource, vTarget, vKey_field, vDesc_field, vNew_desc_field)
+
+	for vCount = 1 to SubStringCount('$(vLanguage)','|')+1
+	
+		let vTaal = SubField('$(vLanguage)','|',$(vCount));
+		
+		left join($(vTarget))
+		load
+			$(vKey_field),
+			$(vDesc_field)			as [$(vNew_desc_field)_$(vTaal)]
+		resident $(vSource)
+			where mixmatch(Taal,'$(vTaal)')>0;
+		
+	next
+
+	store $(vTarget) into $(vTarget).qvd;
+	drop table $(vTarget),$(vSource);
+end sub
+
+///$tab TAGOR_database
+$(vTAGOR);
+
+TREPERTORIUMBURG:
+SQL SELECT 
+	"record_crc",
+    CAST("TREPERTORIUMBURG_Id" as varchar(20)) 	as  "TREPERTORIUMBURG_Id",
+    CAST("TDOSLIJN_Id" as varchar(20)) 			as "TDOSLIJN_Id",
+    Boek,
+    Blad,
+    Vak,
+    DatumRep,
+    BedragRep,
+    Referte,
+    Repertoriumnr,
+    "TQREGISTRATIE_Id",
+    Afgedrukt,
+    DatumBoeking
+FROM PUB.TREPERTORIUMBURG;
+
+store TREPERTORIUMBURG into front_end\TREPERTORIUMBURG.qvd;
+drop table TREPERTORIUMBURG;
+
+TNRS:
+LOAD Comment,
+    Gebruikt,
+    NrsValue,
+    "Owning_Entity",
+    "Owning_Id",
+    "record_crc",
+    "Sequence_Id",
+    "TNRS_Id",
+    "TNRS_Id_Basis",
+    "TQLAND_Id",
+    "TQNRS_Id";
+SQL SELECT Comment,
+    Gebruikt,
+    NrsValue,
+    "Owning_Entity",
+   CAST(Owning_Id as varchar(20)) as  "Owning_Id",
+    "record_crc",
+    "Sequence_Id",
+   CAST(TNRS_Id as varchar(20)) as  "TNRS_Id",
+    "TNRS_Id_Basis",
+   CAST(TQLAND_Id as varchar(20)) as  "TQLAND_Id",
+   CAST(TQNRS_Id as varchar(20)) as  "TQNRS_Id"
+FROM TAGOR.PUB.TNRS;
+
+
+store TNRS into front_end\TNRS.qvd;
+
+drop table TNRS;
+
+
+
+
+///$tab Translation
+// **************************** TNRS ******************
+TQNRS:
+SQL SELECT CAST("TQNRS_Id" as varchar(20))	as TQNRS_ID,
+	Gebruikt,
+	TQNRS_Code,
+	CAST("TQNRSGROEP_Id" as varchar(20))	as TQNRSGROEP_ID
+FROM PUB.TQNRS;
+
+TQNRSX:
+SQL SELECT CAST("TQNRS_Id" as varchar(20))	as TQNRS_ID,
+	Taal,
+	Omschrijving,
+	Beschrijving
+FROM PUB.TQNRSX;
+
+CALL translate('dut|frn', 'TQNRSX', 'TQNRS', 'TQNRS_ID', 'Omschrijving','TQNRS Omschr')
+
+// **************************** TDOC ******************
+
+
+TQDISGROEP:
+SQL SELECT 
+	CreatieNtGefixeerdeLijn,
+    Gebruikt,
+    "MergeField_Code",
+    "record_crc",
+    "Sequence_Id",
+    "TQDISGROEP_Code",
+    CAST("TQDISGROEP_Id" as varchar(20))	as TQDISGROEP_ID, 
+    "TQDOCSECURITY_Id" ,     
+    WordDocNtTonen
+FROM PUB.TQDISGROEP;
+
+TQDISGROEPX:
+SQL SELECT 
+	Beschrijving,
+    Omschrijving,
+    "record_crc",
+    Taal,
+    CAST("TQDISGROEP_Id" as varchar(20))	as TQDISGROEP_ID
+FROM PUB.TQDISGROEPX;
+
+CALL translate('dut|frn', 'TQDISGROEPX', 'TQDISGROEP', 'TQDISGROEP_ID', 'Omschrijving','TQDISGROEP Omschr')
+
+// **************************** TQKOST ******************
+
+
+TQKOST:
+load
+	TQKOST_ID,
+	TQKOST_Code					as Kost_code,
+	ORAS_RekNr
+;
+SQL SELECT 
+//	record_crc,
+	CAST(TQKOST_Id as varchar(20)) as TQKOST_ID,
+	TQKOST_Code,
+	Gebruikt,
+	CAST(TQMUNT_Id as varchar(20)) as TQMUNT_ID,
+	CAST(TQKOSTVR_Id as varchar(20)) as TQKOSTVR_ID,
+	ORAS_RekNr,
+	CAST(TQKOSTTARIEF_Id as varchar(20)) as TQKOSTTARIEF_ID,
+	CAST(TQPRODEO_Id as varchar(20)) as TQPRODEO_ID,
+	CAST(TQKOSTTYPE_Id as varchar(20)) as TQKOSTTYPE_ID,
+	CAST(TQDOCGROEP_Id as varchar(20)) as TQDOCGROEP_ID,
+	Formule,
+	Gefixeerd,
+	MergeField_Code,
+	Registratie,
+	BTWPercentage
+FROM pub.TQKOST;
+
+TQKOSTX:
+SQL SELECT 
+//	record_crc,
+	CAST(TQKOST_Id as varchar(20)) as TQKOST_ID,
+	Taal,
+	Omschrijving,
+	Beschrijving,
+	MergeField_M_0700
+FROM pub.TQKOSTX;
+
+
+CALL translate('dut|frn', 'TQKOSTX', 'TQKOST', 'TQKOST_ID', 'Omschrijving','Kost')
+
+// **************************** TQBOEKING ******************
+
+TQBOEKING:
+load
+	TQBOEKING_ID,
+	TQBOEKING_Code								as Booking_code,
+	TQBOEKINGGROEP_ID,
+	ORAS_RekNr
+;
+SQL SELECT 
+//	record_crc,
+	CAST(TQBOEKING_Id as varchar(20)) as TQBOEKING_ID,
+	TQBOEKING_Code,
+	Gebruikt,
+	Kwitantie,
+	CAST(TQBOEKINGGROEP_Id as varchar(20)) as TQBOEKINGGROEP_ID,
+	CAST(TQBOEKINGOMS_Id as varchar(20)) as TQBOEKINGOMS_ID,
+	CAST(TQBOEKING_Cnv_in_Id as varchar(20)) as TQBOEKING_CNV_IN_ID,
+	CAST(TQBOEKING_Cnv_uit_Id as varchar(20)) as TQBOEKING_CNV_UIT_ID,
+	ORAS_RekNr,
+	MergeField_Code,
+	DefaultOmschrijvingVoorFA,
+	AardVerplicht
+FROM pub.TQBOEKING;
+
+TQBOEKINGX:
+SQL SELECT 
+//	record_crc,
+	CAST(TQBOEKING_Id as varchar(20)) as TQBOEKING_ID,
+	Taal,
+	Omschrijving,
+	Beschrijving,
+	Formule
+FROM pub.TQBOEKINGX;
+
+CALL translate('dut|frn', 'TQBOEKINGX', 'TQBOEKING', 'TQBOEKING_ID', 'Omschrijving','Booking')
+
+// **************************** TQSTATUS ******************
+
+TQSTATUS:
+load
+	TQSTATUS_ID,
+	TQSTATUS_Code						as Status_code,
+	Afgesloten,
+	Gestopt,
+	applymap('color',KleurBG)			as Status_bg_color,
+	applymap('color',KleurFG)			as Status_fg_color,
+	GestoptDoorKlant
+;
+SQL SELECT 
+//	record_crc,
+	CAST(TQSTATUS_Id as varchar(20)) as TQSTATUS_ID,
+	TQSTATUS_Code,
+	Afgesloten,
+	CAST(TQBOEKING_Id as varchar(20)) as TQBOEKING_ID,
+	Gestopt,
+	EenmaligeOpdrachtRSZ,
+	KleurFG,
+	KleurBG,
+	GestoptDoorKlant,
+	FaseDossier,
+	Gebruikt
+FROM pub.TQSTATUS;
+
+TQSTATUSX:
+SQL SELECT 
+	// record_crc,
+	CAST(TQSTATUS_Id as varchar(20)) as TQSTATUS_ID,
+	Taal,
+	Omschrijving,
+	Beschrijving
+FROM pub.TQSTATUSX;
+
+CALL translate('dut|frn', 'TQSTATUSX', 'TQSTATUS', 'TQSTATUS_ID', 'Omschrijving','Status')
+
+
+
+// **************************** TDOSGROEP ******************
+
+TDOSGROEP:
+load
+	TDOSGROEP_ID,
+	TDOSGROEP_Code								as Group_code
+;
+SQL SELECT 
+	// record_crc,
+	CAST(TDOSGROEP_Id as varchar(20)) as TDOSGROEP_ID,
+	TDOSGROEP_Code,
+	Gebruikt,
+	CAST(TQDOSSOORT_Id as varchar(20)) as TQDOSSOORT_ID,
+	ViaReeks
+FROM pub.TDOSGROEP;
+
+TDOSGROEPDOS:
+ join (TDOSGROEP)
+load	
+	TDOSGROEP_ID,
+	TDOS_ID
+;
+SQL SELECT 
+	// record_crc,
+	CAST(TDOSGROEPDOS_Id as varchar(20)) as TDOSGROEPDOS_ID,
+	CAST(TDOSGROEP_Id as varchar(20)) as TDOSGROEP_ID,
+	CAST(TDOS_Id as varchar(20)) as TDOS_ID,
+	SorteerWaarde
+FROM pub.TDOSGROEPDOS;
+
+TDOSGROEPX:
+SQL SELECT 
+	// record_crc,
+	CAST(TDOSGROEP_Id as varchar(20)) as TDOSGROEP_ID,
+	Taal,
+	Omschrijving,
+	Beschrijving
+FROM pub.TDOSGROEPX;
+
+CALL translate('dut|frn', 'TDOSGROEPX', 'TDOSGROEP', 'TDOSGROEP_ID', 'Omschrijving','Group')
+
+
+// **************************** TQDATUM ******************
+
+TQDATUM:
+load
+	TQDATUM_ID,
+	TQDATUM_Code											as Date_code
+;
+SQL SELECT 
+	// record_crc,
+	CAST(TQDATUM_Id as varchar(20)) as TQDATUM_ID,
+	TQDATUM_Code,
+	Gebruikt,
+	Module_01,
+	Module_02,
+	Module_03,
+	Module_04,
+	Module_05
+FROM pub.TQDATUM;
+
+TQDATUMX:
+SQL SELECT 
+	// record_crc,
+	CAST(TQDATUM_Id as varchar(20)) as TQDATUM_ID,
+	Taal,
+	Omschrijving,
+	Beschrijving
+FROM pub.TQDATUMX;
+
+CALL translate('dut|frn', 'TQDATUMX', 'TQDATUM', 'TQDATUM_ID', 'Omschrijving','Date')
+
+
+
+// **************************** TQPLAATS ******************
+
+TQPLAATS:
+load
+	TQPLAATS_ID,
+	Lengtegraad			as Longitude, 
+    Breedtegraad		as Latitude
+;
+SQL SELECT 
+	// record_crc,
+	CAST(TQPLAATS_Id as varchar(20)) as TQPLAATS_ID,
+	NIS_Id,
+	CAST(TQPOST_Id as varchar(20)) as TQPOST_ID,
+	CAST(TQPLAATS_Id_Hoofd as varchar(20)) as TQPLAATS_ID_HOOFD,
+	Lengtegraad,
+	Breedtegraad,
+	CAST(TQLAND_Id as varchar(20)) as TQLAND_ID,
+	Gebruikt
+FROM pub.TQPLAATS;
+
+TQPLAATSX:
+SQL SELECT 
+	// record_crc,
+	CAST(TQPLAATS_Id as varchar(20)) as TQPLAATS_ID,
+	Taal,
+	Omschrijving
+FROM pub.TQPLAATSX;
+
+CALL translate('dut|frn', 'TQPLAATSX', 'TQPLAATS', 'TQPLAATS_ID', 'Omschrijving','City')
+
+
+
+// **************************** TQLINK ******************
+
+TQLINK:
+load
+	TQLINK_ID,
+	TQLINK_Code				as Link_code
+;
+SQL SELECT 
+	// record_crc,
+	CAST(TQLINK_Id as varchar(20)) as TQLINK_ID,
+	TQLINK_Code,
+	Gebruikt
+FROM pub.TQLINK;
+
+TQLINKX:
+SQL SELECT 
+	// record_crc,
+	CAST(TQLINK_Id as varchar(20)) as TQLINK_ID,
+	Taal,
+	Omschrijving,
+	Beschrijving
+FROM pub.TQLINKX;
+
+CALL translate('dut|frn', 'TQLINKX', 'TQLINK', 'TQLINK_ID', 'Omschrijving','Link')
+
+
+
+
+// **************************** TQSOLVABILITEIT ******************
+
+TQSOLVABILITEIT:
+load	 
+	 TQSOLVABILITEIT_ID, 
+     TQSOLVABILITEIT_Code			as Solvability_code, 
+     TypeSolvabiliteit				as Solvability_type,
+     TQBOODSCHAP_ID
+;
+SQL SELECT 
+	// record_crc,
+	CAST(TQSOLVABILITEIT_Id as varchar(20)) as TQSOLVABILITEIT_ID,
+	TQSOLVABILITEIT_Code,
+	CAST(TQBOODSCHAP_Id as varchar(20)) as TQBOODSCHAP_ID,
+	Gebruikt,
+	DatumVerplicht,
+	TypeSolvabiliteit,
+	CAST(TQFORMULE_Id as varchar(20)) as TQFORMULE_ID
+FROM pub.TQSOLVABILITEIT;
+
+left join (TQSOLVABILITEIT)
+LOAD Distinct
+	TQBOODSCHAP_ID,
+    applymap('color',KleurBG)			as Solvabitiy_message_bg_color,
+    applymap('color',KleurFG)			as Solvabitiy_message_fg_color
+;
+SQL SELECT 
+	CAST(TQBOODSCHAP_Id as varchar(20))	as TQBOODSCHAP_ID,
+    KleurBG,
+    KleurFG
+FROM PUB.TQBOODSCHAP;
+
+TQSOLVABILITEITX:
+SQL SELECT 
+	// record_crc,
+	CAST(TQSOLVABILITEIT_Id as varchar(20)) as TQSOLVABILITEIT_ID,
+	Taal,
+	Omschrijving,
+	Beschrijving	
+FROM pub.TQSOLVABILITEITX;
+
+CALL translate('dut|frn', 'TQSOLVABILITEITX', 'TQSOLVABILITEIT', 'TQSOLVABILITEIT_ID', 'Omschrijving','Solvability')
+
+
+
+// **************************** TQDOSSOORT ******************
+
+TQDOSSOORT:
+load
+	TQDOSSOORT_ID,
+	TQDOSSOORT_Code						as Dossier_type_code,
+//	Logo,
+	applymap('color',KleurBG)			as Dossier_type_bg_color,
+	applymap('color',KleurFG)			as Dossier_type_fg_color,
+	TQDOSSOORTGROEP_ID
+;
+SQL SELECT 
+	// record_crc,
+	CAST(TQDOSSOORT_Id as varchar(20)) as TQDOSSOORT_ID,
+	TQDOSSOORT_Code,
+	Gebruikt,
+	CAST(TDOS_Id_Default as varchar(20)) as TDOS_ID_DEFAULT,
+	DossierNaamFormaat,
+	Logo,
+	KleurBG,
+	KleurFG,
+	CAST(TQBOODSCHAP_Id as varchar(20)) as TQBOODSCHAP_ID,
+	IngaveViaDossier,
+	CAST(TQDOSSOORTGROEP_Id as varchar(20)) as TQDOSSOORTGROEP_ID,
+	FaseDossierDefault,
+	MergeField_Code,
+	Referte_Email,
+	DoorstortenNaFinancieel,
+	EenmaligeOpdracht,
+	RedenVoorrang,
+	AardSchuldVordering,
+	Mergefield_M_0017,
+	Mergefield_M_0065,
+	FCNaarFBBijRegeling,
+	CAST(TQBOEKING_Default_Id as varchar(20)) as TQBOEKING_DEFAULT_ID,
+	UniekeRefertePerDoorst,
+	CAST(TQREGISTRATIE_Id as varchar(20)) as TQREGISTRATIE_ID //,
+//	FixeerIRBijStop, --> nog niet in db op orwitagt01
+//	FixeerIRDirect	 --> nog niet in db op orwitagt01
+FROM pub.TQDOSSOORT;
+
+TQDOSSOORTX:
+SQL SELECT 
+	// record_crc,
+	CAST(TQDOSSOORT_Id as varchar(20)) as TQDOSSOORT_ID,
+	Taal,
+	Omschrijving,
+	Beschrijving
+FROM pub.TQDOSSOORTX;
+
+CALL translate('dut|frn', 'TQDOSSOORTX', 'TQDOSSOORT', 'TQDOSSOORT_ID', 'Omschrijving','Dossier_type')
+
+
+// **************************** TQPARSOORT ******************
+
+TQPARSOORT:
+load
+	TQPARSOORT_ID,
+	TQPARSOORT_Code				as Type_code
+;
+SQL SELECT 
+	CAST(TQPARSOORT_Id as varchar(20)) as TQPARSOORT_ID,
+	TQPARSOORT_Code,
+	Gebruikt,
+	InternalUse,
+	MergeField_Code,
+	Module_01,
+	Module_02,
+	Module_03,
+	Module_04,
+	Module_05,
+	Module_06,
+	Module_07,
+	Module_08,
+	Module_09,
+	Module_10,
+	CAST(TQAD_Id as varchar(20)) as TQAD_ID,
+	CAST(TQFORMULE_Id_M_0440 as varchar(20)) as TQFORMULE_ID_M_0440
+FROM pub.TQPARSOORT;
+
+TQPARSOORTX:
+SQL SELECT 
+	// record_crc,
+	CAST(TQPARSOORT_Id as varchar(20)) as TQPARSOORT_ID,
+	Taal,
+	Omschrijving,
+	Beschrijving
+FROM pub.TQPARSOORTX;
+
+CALL translate('dut|frn', 'TQPARSOORTX', 'TQPARSOORT', 'TQPARSOORT_ID', 'Omschrijving','Type')
+
+
+// **************************** TQSALDO ******************
+
+TQSALDO:
+load
+	TQSALDO_ID,
+	TQSALDO_Code			as Saldo_code
+;
+SQL SELECT 
+	// record_crc,
+	CAST(TQSALDO_Id as varchar(20)) as TQSALDO_ID,
+	TQSALDO_Code,
+	Gebruikt,
+	Automatisch,
+	EnkelGefixeerd
+FROM pub.TQSALDO;
+
+TQSALDOX:
+SQL SELECT 
+	// record_crc,
+	CAST(TQSALDO_Id as varchar(20)) as TQSALDO_ID,
+	Taal,
+	Omschrijving,
+	Beschrijving
+FROM pub.TQSALDOX;
+
+CALL translate('dut|frn', 'TQSALDOX', 'TQSALDO', 'TQSALDO_ID', 'Omschrijving','Saldo')
+
+
+
+// **************************** TQREF ******************
+
+TQREF:
+LOAD
+	TQREF_ID,
+	TQREF_Code			as Ref_code
+;
+SQL SELECT 
+	// record_crc,
+	CAST(TQREF_Id as varchar(20)) as TQREF_ID,
+	TQREF_Code,
+	Gebruikt,
+	CAST(TQREFGROEP_Id as varchar(20)) as TQREFGROEP_ID
+FROM pub.TQREF;
+
+TQREFX:
+SQL SELECT 
+	// record_crc,
+	CAST(TQREF_Id as varchar(20)) as TQREF_ID,
+	Taal,
+	Omschrijving,
+	Beschrijving
+FROM pub.TQREFX;
+
+CALL translate('dut|frn', 'TQREFX', 'TQREF', 'TQREF_ID', 'Omschrijving','Ref')
+
+// **************************** TQAD ******************
+
+TQAD:
+load
+	TQAD_ID,
+	TQAD_Code				as Adress_code
+;
+SQL SELECT 
+	// record_crc,
+	CAST(TQAD_Id as varchar(20)) as TQAD_ID,
+	TQAD_Code
+//	Gebruikt,
+//	MergeField_Code,
+//	Module_01
+//	Module_02,
+//	Module_03,
+//	Module_04,
+//	Module_05
+FROM pub.TQAD;
+
+TQADX:
+SQL SELECT 
+	// record_crc,
+	CAST(TQAD_Id as varchar(20)) as TQAD_ID,
+	Taal,
+	Omschrijving,
+	Beschrijving
+FROM pub.TQADX;
+
+CALL translate('dut|frn', 'TQADX', 'TQAD', 'TQAD_ID', 'Omschrijving','Adress')
+
+
+
+// **************************** TQBOEKINGGROEP ******************
+
+TQBOEKINGGROEP:
+load
+	TQBOEKINGGROEP_ID,
+	TQBOEKINGGROEP_Code			as Booking_group_code,
+	IngaveViaDossier			as Flag_dossier,
+	Financieel					as Flag_finacial,
+	[Aanwending] AS [Flag_Aanwending]
+;
+SQL SELECT 
+	// record_crc,
+	TQBOEKINGGROEP_Id,
+	CAST(TQBOEKINGGROEP_Id as varchar(20)) as TQBOEKINGGROEP_ID,
+	TQBOEKINGGROEP_Code,
+	Gebruikt,
+	Parket,
+	Dossier,
+	IsBerekendeLijn,
+	InningsrechtVerworven,
+	Kwijtingsrecht,
+	Inningsrecht,
+	IngaveViaDossier,
+	Doorstorten,
+	Gefixeerd,
+	NaarORAS,
+	TQBOEKINGGROEPORAS_Id,
+	CAST(TQBOEKINGGROEPORAS_Id as varchar(20)) as TQBOEKINGGROEPORAS_ID,
+	KolomNaam,
+	Financieel,
+	TQBOEKINGGROEP_Id_Doorst,
+	CAST(TQBOEKINGGROEP_Id_Doorst as varchar(20)) as TQBOEKINGGROEP_ID_DOORST,
+	Doorstorting,
+	TQPARSOORT_Id,
+	CAST(TQPARSOORT_Id as varchar(20)) as TQPARSOORT_ID,
+	Aanwending,
+	OpRappel,
+	KolomNaamAanwending,
+	Regeling,
+	OpnemenInReferte,
+	DatumControleDoorstorten //,
+//	Dagontvangsten --> nog niet in db op orwitagt01
+FROM pub.TQBOEKINGGROEP;
+
+TQBOEKINGGROEPX:
+SQL SELECT
+	// record_crc,
+	TQBOEKINGGROEP_Id,
+	CAST(TQBOEKINGGROEP_Id as varchar(20)) as TQBOEKINGGROEP_ID,
+	Taal,
+	Omschrijving,
+	Beschrijving
+FROM pub.TQBOEKINGGROEPX;
+
+CALL translate('dut|frn', 'TQBOEKINGGROEPX', 'TQBOEKINGGROEP', 'TQBOEKINGGROEP_ID', 'Omschrijving','Booking_group')
+
+// **************************** TQSTRAAT ******************
+TQSTRAAT:
+SQL SELECT 
+//	record_crc,
+	CAST(TQSTRAAT_Id as varchar(20)) as TQSTRAAT_ID,
+	RR_Id,
+	CAST(TQPOST_Id as varchar(20)) as TQPOST_ID,
+	NIS_Id,
+	Gebruikt as TQSTRAAT_Gebruikt
+FROM pub.TQSTRAAT;
+
+TQSTRAATX:
+SQL SELECT 
+//	record_crc,
+	CAST(TQSTRAAT_Id as varchar(20)) as TQSTRAAT_ID,
+	Taal,
+	Omschrijving
+FROM pub.TQSTRAATX;
+
+CALL translate('dut|frn', 'TQSTRAATX', 'TQSTRAAT', 'TQSTRAAT_ID', 'Omschrijving','Street')
+
+// **************************** TQLAND ******************
+TQLAND:
+load
+	TQLAND_ID,
+	TQLAND_Code						as Country_code
+;
+SQL SELECT 
+//	record_crc,
+	CAST(TQLAND_Id as varchar(20)) as TQLAND_ID,
+	TQLAND_Code,
+	OmgangsTaal,
+	CAST(TQMUNT_Id as varchar(20)) as TQMUNT_ID,
+	TelId,
+	BtwId,
+	GeonoomId,
+	Euro,
+	PostFormat,
+	BankFormat,
+	BtwFormat,
+	Postid,
+	Gebruikt
+FROM pub.TQLAND;
+
+TQLANDX:
+SQL SELECT 
+//	record_crc,
+	CAST(TQLAND_Id as varchar(20)) as TQLAND_ID,
+	Taal,
+	Landnaam,
+	Nationaliteit
+FROM pub.TQLANDX;
+
+CALL translate('dut|frn', 'TQLANDX', 'TQLAND', 'TQLAND_ID', 'Landnaam','Country')
+
+// **************************** TQAARD ******************
+
+TQAARD:
+load
+	TQAARD_ID,
+	TQAARD_Code						as Nature_booking_type_code,
+	InRepertorium,
+	IsAkte,
+	NaarCBB,
+	Overdrachtbericht,
+	Bevel,
+	Betekening,
+	BetekeningBevel,	
+	Rolzetting,
+	VerkoopdatumVerplicht,
+	Beslagbericht,	
+	Gebruikt,
+	IsKost
+;
+SQL SELECT 
+//	record_crc,
+	CAST(TQAARD_Id as varchar(20)) as TQAARD_ID,
+	TQAARD_Code,
+	Gebruikt,
+	IsKost,
+	InRepertorium,
+	Rolzetting,
+	VerkoopdatumVerplicht,
+	Beslagbericht,
+	CAST(TQBESLAGUITV_Id as varchar(20)) as TQBESLAGUITV_ID,
+	CAST(TQBESLAG_Id as varchar(20)) as TQBESLAG_ID,
+	Overdrachtbericht,
+	Bevel,
+	Betekening,
+	BetekeningBevel,
+	MergeField_Code,
+	IsAkte,
+	NaarCBB
+FROM pub.TQAARD;
+
+TQAARDX:
+SQL SELECT 
+//	record_crc,
+	CAST(TQAARD_Id as varchar(20)) as TQAARD_ID,
+	Taal,
+	Omschrijving,
+	Beschrijving
+FROM pub.TQAARDX;
+
+CALL translate('dut|frn', 'TQAARDX', 'TQAARD', 'TQAARD_ID', 'Omschrijving','Nature_booking_type')
+
+//-------- TQRECHTSTOESTAND ------
+TQRECHTSTOESTAND:
+LOAD 
+	TQRECHTSTOESTAND_ID,
+	TQRECHTSTOESTAND_Code		as Legal_entity_code
+;
+SQL SELECT 
+	CAST(TQRECHTSTOESTAND_Id as varchar(20)) as TQRECHTSTOESTAND_ID,
+	TQRECHTSTOESTAND_Code
+FROM PUB.TQRECHTSTOESTAND;
+
+TQRECHTSTOESTANDX:
+SQL SELECT 
+	CAST(TQRECHTSTOESTAND_Id as varchar(20)) as TQRECHTSTOESTAND_ID,
+	Taal,
+    Omschrijving,
+    Beschrijving
+FROM PUB.TQRECHTSTOESTANDX;
+
+CALL translate('dut|frn', 'TQRECHTSTOESTANDX', 'TQRECHTSTOESTAND', 'TQRECHTSTOESTAND_ID', 'Omschrijving','Legal_entity')
+
+
+//-------- TQFACTUURSOORT ------
+
+TQFACTUURSOORT:
+LOAD 
+    "TQFACTUURSOORT_Code"					as [Invoice type],
+    "TQFACTUURSOORT_ID";
+SQL SELECT 
+    "TQFACTUURSOORT_Code",
+    CAST(TQFACTUURSOORT_Id as varchar(20))	as TQFACTUURSOORT_ID
+FROM PUB.TQFACTUURSOORT;
+
+TQFACTUURSOORTX:
+SQL SELECT Beschrijving,
+    Omschrijving,
+    "record_crc",
+    Taal,
+    CAST(TQFACTUURSOORT_Id as varchar(20))	as TQFACTUURSOORT_ID
+FROM PUB.TQFACTUURSOORTX;
+
+CALL translate('dut|frn', 'TQFACTUURSOORTX', 'TQFACTUURSOORT', 'TQFACTUURSOORT_ID', 'Omschrijving','Invoice_type')
+
+//-------- TQINFO ------
+
+TQINFO:
+SQL SELECT Gebruikt,
+    "MergeField_Code",
+    "Module_01",
+    "Module_02",
+    "Module_03",
+    "Module_04",
+    "Module_05",
+    "Module_06",
+    "Module_07",
+    "Module_08",
+    "Module_09",
+    "Module_10",
+    "record_crc",
+    "TQINFO_Code",
+    CAST(TQINFO_Id as varchar(20))	as TQINFO_ID,
+    CAST(TQTEMPLATE_Id as varchar(20))	as TQTEMPLATE_ID
+FROM PUB.TQINFO;
+
+TQINFOX:
+SQL SELECT Beschrijving,
+    Omschrijving,
+    "record_crc",
+    Taal,
+    CAST(TQINFO_Id as varchar(20))	as TQINFO_ID
+FROM PUB.TQINFOX;
+
+
+CALL translate('dut|frn', 'TQINFOX', 'TQINFO', 'TQINFO_ID', 'Omschrijving','Info_type')
+
+//-------- TQKANTON ------
+
+TQKANTON:
+SQL SELECT Gebruikt,
+    "record_crc",
+    CAST(TQARROND_Id as varchar(20))	as TQARROND_ID,
+    "TQKANTON_Code",
+    CAST(TQKANTON_Id as varchar(20))	as TQKANTON_ID
+FROM PUB.TQKANTON;
+
+
+
+
+TQKANTONX:
+SQL SELECT Beschrijving,
+    Omschrijving,
+    "record_crc",
+    Taal,
+    CAST(TQKANTON_Id as varchar(20))	as TQKANTON_ID
+FROM PUB.TQKANTONX;
+
+CALL translate('dut|frn', 'TQKANTONX', 'TQKANTON', 'TQKANTON_ID', 'Omschrijving','Kanton')
+
+//-------- TQARROND ------
+
+TQARROND:
+load
+	*,
+	TQARROND_Code						as District_code
+;
+SQL SELECT Gebruikt,
+    "record_crc",
+    "TQARROND_Code",
+    CAST(TQARROND_Id as varchar(20))		as TQARROND_ID,
+    CAST(TQARROND_Id_Hoofd as varchar(20))	as TQARROND_ID_HOOFD,
+    CAST(TQARROND_Id_Prov as varchar(20))	as TQARROND_ID_PROV,
+    CAST(TQARRONDKAMER_Id as varchar(20))	as TQARRONDKAMER_ID
+FROM PUB.TQARROND;
+
+TQARRONDX:
+SQL SELECT Beschrijving,
+    "Mergefield_M_0060",
+    "Mergefield_M_0061",
+    Omschrijving,
+    "record_crc",
+    Taal,
+    CAST(TQARROND_Id as varchar(20))	as TQARROND_ID
+FROM PUB.TQARRONDX;
+
+
+CALL translate('dut|frn', 'TQARRONDX', 'TQARROND', 'TQARROND_ID', 'Omschrijving','District')
+
+//-------- TQARROND ------
+
+TQRB:
+SQL SELECT Gebruikt,
+    Kantonaal,
+    "record_crc",
+//    "TDOCM_Id_BET",
+//    "TDOCM_Id_DGV",
+//    "TQFORMULE_Id_Strafrep1",
+//    "TQFORMULE_Id_Strafrep2",
+    "TQRB_Code",
+  	CAST(TQRB_Id as varchar(20))	as TQRB_ID
+FROM PUB.TQRB;
+
+TQRBX:
+SQL SELECT Beschrijving,
+    Omschrijving,
+    "record_crc",
+    Taal,
+  	CAST(TQRB_Id as varchar(20))	as TQRB_ID
+FROM PUB.TQRBX;
+
+CALL translate('dut|frn', 'TQRBX', 'TQRB', 'TQRB_ID', 'Omschrijving','TQRB')
+
+
+//-------- TQPERIODE ------
+
+TQPERIODE:
+SQL SELECT 
+//	"record_crc",
+    CAST(TQPERIODE_Id as varchar(20))	as TQPERIODE_ID,
+    "TQPERIODE_Code"
+//    Gebruikt,
+//    SorteerVolgorde,
+//    "Outlook_Id"
+FROM PUB.TQPERIODE;
+
+TQPERIODEX:
+SQL SELECT 
+//	"record_crc",
+    CAST(TQPERIODE_Id as varchar(20))	as TQPERIODE_ID,
+    Taal,
+    Beschrijving,
+    Omschrijving
+FROM PUB.TQPERIODEX;
+
+CALL translate('dut|frn', 'TQPERIODEX', 'TQPERIODE', 'TQPERIODE_ID', 'Omschrijving','TQPERIODE')
+///$tab afbetaling
+tt_TDOSAFB:
+SQL SELECT
+	CAST(TQAFBBRON_Id as varchar(20))	as TQAFBBRON_ID,
+	CAST(TDOSAFB_Id as varchar(20))		as TDOSAFB_ID,
+    "record_crc",
+    Comment,
+    Email,
+    SMS,
+    CAST(TQDOC_Id as varchar(20))		as TQDOC_ID,
+    CAST(TDOS_Id as varchar(20))		as TDOS_ID,
+    InAanvraag
+FROM PUB.TDOSAFB;
+
+timestamp:
+left join(tt_TDOSAFB)
+load
+	TDOSAFB_ID,
+	TimeStampCreatie						as TDOSAFB_creatie
+;
+SQL SELECT 
+//	"Owning_Entity",
+	CAST("Owning_Id" as varchar(20)) 		as  TDOSAFB_ID,  
+    "record_crc",
+    TimeStampCreatie,
+    TimestampGeopend,
+    TimeStampInactief,
+    TimeStampWijziging,
+    UsrCreatie,
+    UsrGeopend,
+    UsrInactief,
+    UsrWijziging,
+    VersieCreatie,
+    VersieInactief,
+    VersieWijziging
+FROM PUB.TTIMESTAMP
+	where Owning_Entity = 'TDOSAFB';
+
+TDOSAFB:
+load
+	max(TDOSAFB_creatie)	as TDOSAFB_creatie,
+	TDOS_ID
+resident tt_TDOSAFB
+	group by TDOS_ID;
+	
+left join(TDOSAFB)
+load
+	*
+Resident tt_TDOSAFB;
+
+drop Table tt_TDOSAFB;
+
+Left join(TDOSAFB)
+SQL SELECT
+	"record_crc",
+	CAST(TDOSAFB_Id as varchar(20))		as TDOSAFB_ID,
+    CAST(TDOSAFBDET_Id as varchar(20))	as TDOSAFBDET_ID,
+    CAST(TQPERIODE_Id as varchar(20))	as TQPERIODE_ID,
+    Bedrag,
+    DatumBetaal,
+    DatumTot
+FROM PUB.TDOSAFBDET;
+
+
+Left join(TDOSAFB)
+LOAD 
+	 TQPERIODE_ID, 
+     TQPERIODE_Code, 
+     TQPERIODE_dut, 
+     TQPERIODE_frn
+FROM
+TQPERIODE.qvd
+(qvd);
+
+store TDOSAFB into front_end\TDOSAFB.qvd;
+drop Table TDOSAFB;
+
+///$tab Factuur
+TFACTUUR:
+SQL SELECT 
+	BedragBasis,
+    BedragBB,
+    BedragBTW,
+    BedragTeBetalen,
+    BedragTotaal,
+    BetaalDatum,
+    Boekjaar,
+    "CD_BETAL",
+    "CD_BETALWZ",
+    "CD_BTW",
+    Comment,
+    DagboekNr,
+    "DagboekNr_P",
+    FactuurDatum,
+    Factuurnr,
+    FactuurNrLev,
+    FactuurType,
+    Goedgekeurd,
+    OntvangDatum,
+    Periode,
+    PreRegNr,
+    Referte1,
+    Referte2,
+	CAST(TFACTUUR_Id as varchar(20)) 		as TFACTUUR_ID,
+	CAST(TPAR_Id as varchar(20)) 			as TPAR_ID,
+	CAST(TQFACTUURSOORT_Id as varchar(20)) 	as TQFACTUURSOORT_ID,
+	CAST(TQSTATUS_Id as varchar(20)) 		as TQSTATUS_ID,
+    Vervaldatum
+FROM PUB.TFACTUUR;
+
+TQSTATUS:
+left join (TFACTUUR)
+LOAD 
+	 TQSTATUS_ID, 
+     Status_code							as [Invoice status code], 
+     Afgesloten								as [Invoice afgeslosten], 
+     Gestopt								as [Invoice gestopt], 
+     Status_dut								as [Invoice status_dut], 
+     Status_frn								as [Invoice status_frn]
+FROM
+TQSTATUS.qvd
+(qvd);
+
+left join (TFACTUUR)
+LOAD 
+	 TQFACTUURSOORT_ID, 
+     [Invoice type], 
+     Invoice_type_dut						as [Invoice type_dut], 
+     Invoice_type_frn						as [Invoice type_frn]
+FROM
+TQFACTUURSOORT.qvd
+(qvd);
+
+store TFACTUUR into front_end\TFACTUUR.qvd;
+drop table TFACTUUR;
+
+TFACTUURLIJN:
+SQL SELECT 
+	Bedrag,
+    BoekstukDatum,
+    FactuurlijnBetaald,
+    StukVolgNr,
+	CAST(TDOS_Id as varchar(20)) 			as TDOS_ID,
+	CAST(TDOSLIJN_Id as varchar(20)) 		as TDOSLIJN_ID,
+	CAST(TFACTUUR_Id as varchar(20)) 		as TFACTUUR_ID,
+	CAST(TFACTUURLIJN_Id as varchar(20)) 	as TFACTUURLIJN_ID
+FROM PUB.TFACTUURLIJN;
+
+store TFACTUURLIJN into front_end\TFACTUURLIJN.qvd;
+drop table TFACTUURLIJN;
+
+TFACTUURLIJNBTW:
+SQL SELECT 
+	BedragBasis,
+    BedragBTW,
+    BTWPercentage,
+	CAST(TFACTUURLIJN_Id as varchar(20)) 	as TFACTUURLIJN_ID,
+	CAST(TFACTUURLIJNBTW_Id as varchar(20)) as TFACTUURLIJNBTW_ID
+FROM PUB.TFACTUURLIJNBTW;
+
+store TFACTUURLIJNBTW into front_end\TFACTUURLIJNBTW.qvd;
+drop table TFACTUURLIJNBTW;
+///$tab diverse
+TDOC:
+LOAD 
+    DatumDocument,
+    Naam,
+    OWNING_ID								as TDOS_ID,
+    Taal,
+    TDOC_ID,
+   	TDOC_Nummer,
+    TDOCM_ID,
+    TQDISGROEP_ID,
+    TUSER_ID,
+    DISID,
+    if(TJOBDOC_ID=0,TDOC_ID,TJOBDOC_ID)		as CountDoc,
+    TimestampDocument;
+SQL SELECT 
+	Comment,
+    DatumDocument,
+    DISID,
+    IsGescand,
+    Naam,
+    "Owning_Entity",
+    "Owning_Entity2",
+    "Owning_Entity3",
+    CAST("Owning_Id" as varchar(20))		as OWNING_ID,
+    CAST("Owning_Id2" as varchar(20))		as Owning_ID2,
+    CAST("Owning_Id3" as varchar(20))		as Owning_ID3,        
+    "record_crc",
+    Taal,
+    CAST("TDOC_Id" as varchar(20))			as TDOC_ID,
+    "TDOC_Nummer",
+    CAST("TDOCM_Id" as varchar(20))			as TDOCM_ID,
+    TimestampDocument,
+    CAST("TJOBDOC_Id" as varchar(20))		as TJOBDOC_ID,	
+    CAST("TQDISGROEP_Id" as varchar(20))	as TQDISGROEP_ID,    
+    CAST("TQDOCSECURITY_Id" as varchar(20))	as TQDOCSECURITY_ID,    
+    CAST("TQRICHTING_Id" as varchar(20))	as TQRICHTING_ID,    
+    CAST("TQSTATUS_Id" as varchar(20))		as TQSTATUS_ID,    
+    CAST("TUSER_Id" as varchar(20))			as TUSER_ID
+FROM PUB.TDOC
+	where "Owning_Entity" = 'TDOS';
+	
+
+timestamp:
+left join(TDOC)
+load
+	TDOC_ID,
+	makedate(year(TimeStampCreatie),month(TimeStampCreatie),day(TimeStampCreatie))					as DocCreatie,
+	UsrCreatie																						as DocUsrCreatie
+;
+SQL SELECT 
+//	"Owning_Entity",
+	CAST("Owning_Id" as varchar(20)) 		as  "TDOC_ID",  
+    "record_crc",
+    TimeStampCreatie,
+    TimestampGeopend,
+    TimeStampInactief,
+    TimeStampWijziging,
+    UsrCreatie,
+    UsrGeopend,
+    UsrInactief,
+    UsrWijziging,
+    VersieCreatie,
+    VersieInactief,
+    VersieWijziging
+FROM PUB.TTIMESTAMP
+	where Owning_Entity = 'TDOC';	
+
+left join(TDOC)
+LOAD 
+	 TQDISGROEP_ID, 
+     TQDISGROEP_Code,  
+     [TQDISGROEP Omschr_dut], 
+     [TQDISGROEP Omschr_frn]
+FROM
+TQDISGROEP.qvd
+(qvd);
+
+store TDOC into front_end\TDOC.qvd;
+drop table TDOC;
+
+
+
+// **************************** TDOCM ******************
+
+
+TDOCM:
+SQL SELECT 
+	Aanplakking,
+    AardViaPopup,
+    BasFile,
+    BasistariefMetBETBTK,
+    CheckVerkoopdatum,
+    DatumAanpasbaar,
+    DefaultTaal,
+    EmailCC,
+    EmailSubject,
+    EmailTo,
+    Extensie,
+    Gebruikt,
+    Gefixeerd,
+    InDIS,
+    InDISNoPrint,
+    Inningsrecht,
+    IsAkte,
+    KiesSubdossiers,
+    KostenDezer,
+    Kwijtingsrecht,
+    LaatsteLijnLeeg,
+    Max1Exemplaar,
+    "Mergefield_M_2510",
+    NaamBestand,
+    NaamFolder,
+    NaamMacro,
+    "nr_wl_query",
+    Omsingeling,
+    Orientatie,
+    PerAfzonderlijkExploot,
+    PerGeselecteerdePartij,
+    Preview,
+    ProDeoDocument,
+    "record_crc",
+    Scheidingsteken,
+    TaalDossier,
+    CAST("TDOCM_Id" as varchar(20))			as TDOCM_ID,
+//    "TDOCMGROEP_Id",
+    ToevoegenPartij,
+//    "TQAARD_Id",
+//    "TQBOEKING_Id",
+//	  "TQDISGROEP_Id",
+//    "TQDOC_Id",
+//    "TQDOCTYPE_Id",
+//    "TQFORMULE_Id",
+//    "TQFORMULE_Id_F",
+//    "TQFORMULE_Id_H",
+//    "TQFORMULE_Id_M",
+//    "TQINFO_Id_SaldoVRW",
+//    "TQKOST_Id",
+//    "TQKOSTGROEP_BinnenArrondN_Id",
+//    "TQKOSTGROEP_BinnenArrondV_Id",
+//    "TQKOSTGROEP_BuitenArrond_Id",
+//    "TQKOSTGROEP_BuitenArrondV_Id",
+//    "TQKOSTGROEP_Id",
+//    "TQMAILBODY_Id",
+//    "TQRAPPORT_Id",
+//    "TQRICHTING_Id",
+//    "TQSALDO_Basis_Id",
+    WijzigenAgendalijnen
+FROM PUB.TDOCM;
+
+
+store TDOCM into front_end\TDOCM.qvd;
+drop table TDOCM;
+
+
+
+
+// **************************** TDOSDATUM ******************
+
+TDOSDATUM:
+load
+	TDOS_ID,
+	TQDATUM_ID,
+	Datum			as Dossier_date
+;
+SQL SELECT 
+//	record_crc,
+//	CAST(TDOSDATUM_Id as varchar(20)) as TDOSDATUM_ID,
+	CAST(TDOS_Id as varchar(20)) as TDOS_ID,
+//	CAST(TDOSPAR_Id as varchar(20)) as TDOSDATUM_TDOSPAR_ID,
+	CAST(TQDATUM_Id as varchar(20)) as TQDATUM_ID,
+//	CAST(Sequence_Id as varchar(20)) as TDOSDATUM_SEQUENCE_ID,
+	Datum
+//	Tijdstip
+FROM pub.TDOSDATUM;
+
+left join (TDOSDATUM)
+LOAD 
+	 TQDATUM_ID, 
+     Date_code, 
+     Date_dut,
+     Date_frn
+FROM
+TQDATUM.qvd
+(qvd);
+
+store TDOSDATUM into front_end\TDOSDATUM.qvd;
+drop table TDOSDATUM;
+
+// **************************** TDOSREF ******************
+
+TDOSREF:
+SQL SELECT 
+//	record_crc,
+	CAST(TDOSREF_Id as varchar(20)) as TDOSREF_ID,
+	CAST(TDOS_Id as varchar(20)) as TDOS_ID,
+	CAST(TDOSPAR_Id as varchar(20)) as TDOSPAR_ID,
+	CAST(TQREF_Id as varchar(20)) as TQREF_ID,
+	CAST(Sequence_Id as varchar(20)) as TDOSREF_SEQUENCE_ID,
+	Referentie
+//	ReferentieRevers,
+//	CAST(TDOSREF_Id_Hoofd as varchar(20)) as TDOSREF_ID_HOOFD
+FROM pub.TDOSREF;
+
+left join (TDOSREF)
+LOAD 
+	 TQREF_ID, 
+     Ref_code, 
+	 Ref_dut,
+     Ref_frn
+FROM
+TQREF.qvd
+(qvd);
+
+store TDOSREF into front_end\TDOSREF.qvd;
+drop table TDOSREF;
+
+
+/**
+	QVD TOGM toegevoegd op 22/6/2016
+	Ongestructureerde mededeling nodig in applicatie Facturatie
+**/
+TOGM:
+SQL SELECT CAST(Betaling_Id as varchar(20)) AS Betaling_Id,
+	OGM_Nr,
+	Owning_entity,
+	CAST(Owning_Id as varchar(20)) AS Owning_Id,
+	record_crc,
+	CAST(TNRS_rek_Kantoor_Id as varchar(20)) AS TNRS_rek_Kantoor_Id,
+	CAST(TOGM_Id as varchar(20)) AS TOGM_Id,
+	CAST(TQSTATUS_Id as varchar(20)) AS TQSTATUS_Id
+FROM PUB.TOGM;
+
+store TOGM into front_end\TOGM.qvd;
+DROP TABLE TOGM;
+
+
+// **************************** TCONFRATER ******************
+
+//TCONFRATER:
+//SQL SELECT 
+//	// record_crc,
+//	CAST(TCONFRATER_Id as varchar(20)) as TCONFRATER_ID,
+//	CAST(TPAR_Id as varchar(20)) as TPAR_ID,
+//	AktesIn,
+//	AktesUit,
+//	DatumLaatsteIn,
+//	DatumLaatsteUit,
+//	TotaalIn,
+//	TotaalUit,
+//	Voorkeur
+//FROM pub.TCONFRATER;
+//
+//store TCONFRATER into front_end\TCONFRATER.qvd;
+//drop table TCONFRATER;
+///$tab Partij
+tt_TPAR:
+SQL SELECT 
+//	record_crc,
+	CAST(TPAR_Id as varchar(20)) as TPAR_ID,
+	RegistratieNr,
+	Rijksregisternr,
+	KBOnr,
+	Naam,
+	VoorNaam,
+	TussenNaam,
+	Beroep,
+	Taal,
+	PartijVorm,
+	CAST(TQBEROEP_Id as varchar(20)) as TQBEROEP_ID,
+	DatumBeroep,
+	CAST(TQLAND_Id_Nat as varchar(20)) as TQLAND_ID_NAT,
+	DatumNationaliteit,
+	FiscaleFiche,
+	CAST(TQBURGSTAND_Id as varchar(20)) as TQBURGSTAND_ID,
+	DatumBurgStand,
+	DossierBeheerder,
+	CAST(TQDOSSOORT_Id as varchar(20)) as TQDOSSOORT_ID,
+	ORAS_KlantNr,
+	ORAS_LevNr,
+	DatumGeboorte,
+	DatumGeboorte_C,
+	CAST(TQPLAATS_Id_Geboorte as varchar(20)) as TQPLAATS_ID_GEBOORTE,
+	PlaatsGeboorte,
+	CAST(TQLAND_Id_Geboorte as varchar(20)) as TQLAND_ID_GEBOORTE,
+	CAST(TQGESLACHT_Id as varchar(20)) as TQGESLACHT_ID,
+	Gebruikt,
+	CAST(TQRECHTSTOESTAND_Id as varchar(20)) as TQRECHTSTOESTAND_ID,
+	Handelsbenaming,
+	Solvabiliteit_Code_Adres,
+	CAST(TDOORSTWIJZE_Id as varchar(20)) as TDOORSTWIJZE_ID,
+	Logo,
+	CAST(TQNRS_Rek_Doorst_Id as varchar(20)) as TQNRS_REK_DOORST_ID,
+	DoorstWijze,
+	DoorstManueel,
+	CAST(TQREF_Doorst_Id as varchar(20)) as TQREF_DOORST_ID,
+	CAST(TQREF_RegKost_Id as varchar(20)) as TQREF_REGKOST_ID,
+	HonorariumPerc,
+	HonorariumMax,
+	BBRBKoophandel,
+	HonorariumMin,
+	SchadebedingPerc,
+	SchadebedingMin,
+	SchadebedingMax,
+	CommissiePerc,
+	CommissieMax,
+	CommissieMin,
+	BTWPerc,
+	BBAardVordering,
+	BBRedenVoorrang,
+	CAST(TQBOEKING_Rcht_Id as varchar(20)) as TQBOEKING_RCHT_ID,
+	CAST(TQKOST_Rcht_Id as varchar(20)) as TQKOST_RCHT_ID,
+	BedragRecht,
+	CAST(TQBOEKING_SchB_Id as varchar(20)) as TQBOEKING_SCHB_ID,
+	CAST(TQKOST_SchB_Id as varchar(20)) as TQKOST_SCHB_ID,
+	CAST(TQBOEKING_BTW_Id as varchar(20)) as TQBOEKING_BTW_ID,
+	CAST(TQKOST_BTW_Id as varchar(20)) as TQKOST_BTW_ID,
+	FactuurFormaat,
+	FactuurVolgendNr,
+	CAST(TQINTREST_Id as varchar(20)) as TQINTREST_ID,
+	AfbetalingsPlan,
+	AgendaLijnen,
+	BrievenFinancieel,
+	FBBijDirBel,
+	Deadline,
+	CAST(TQKOSTGROEP_Id as varchar(20)) as TQKOSTGROEP_ID,
+	FactuurDatumLaatse,
+	CAST(TQSTATUS_Id_Type as varchar(20)) as TQSTATUS_ID_TYPE,
+	Solvabiliteit_Code_Financieel,
+	CAST(TDOCM_Id_Rappel as varchar(20)) as TDOCM_ID_RAPPEL,
+	CAST(TQCOM_Id_DefaultDoc as varchar(20)) as TQCOM_ID_DEFAULTDOC,
+	CAST(TQPERIODE_Id_Factuur as varchar(20)) as TQPERIODE_ID_FACTUUR,
+	CAST(TDOCM_Id_Factuur as varchar(20)) as TDOCM_ID_FACTUUR,
+	CAST(TQRBARROND_Id as varchar(20)) as TQRBARROND_ID,
+	CD_BTW,
+	CD_BETAL,
+	CD_BETALWZ,
+	CD_GROEPFAKT,
+	CD_VERZAMEL,
+	UsrCreatie,
+	UsrWijziging,
+	DatumCreatie,
+	DatumWijziging, 
+	BTWNr,	--> nog niet in db op orwitagt01
+	Commissie, --> nog niet in db op orwitagt01		
+	Compensatie --> nog niet in db op orwitagt01
+FROM pub.TPAR;
+
+TUSER:
+SQL SELECT 
+	CacheRR,
+    "cd_group",
+    DefaultTabbladDos,
+    DocumentFolder,
+    Gebruikt,
+    "nr_wl_printer",
+    "nr_wl_printer_dig",
+    OrganiMedewerker,
+    "record_crc",
+    Taal,
+    CAST(TPAR_Id as varchar(20))					as TPAR_ID,
+    CAST(TUSER_Id as varchar(20))					as TUSER_ID,
+    CAST(TUSER_Vervanger_Id as varchar(20))			as TUSER_VERVANGER_ID,
+    CAST(TUSERGROEP_Id as varchar(20))				as TUSERGROEP_ID,
+    UserLogin
+FROM PUB.TUSER;
+
+left join (TUSER)
+load Distinct
+	TPAR_ID,
+	VoorNaam&' '&Naam	as UserNaam
+Resident tt_TPAR;
+
+store TUSER into front_end\TUSER.qvd;
+drop Table TUSER;
+
+TPARINFO:
+SQL SELECT DatumInfo,
+    DatumVonnis,
+    InDossier,
+    Omschrijving,
+    OmschrijvingRTF,
+    "Owning_RB_Entity",
+    CAST(Owning_RB_Id as varchar(20))	as Owning_RB_ID,
+    "record_crc",
+    CAST(Sequence_Id as varchar(20))	as Sequence_ID,
+    Taal,
+    TimestampInfo,
+    CAST(TPAR_Id as varchar(20))		as TPAR_ID,
+    "TPAR_Id_INFO",
+    CAST(TPARINFO_Id as varchar(20))	as TPARINFO_ID,
+    CAST(TQINFO_Id as varchar(20))		as TQINFO_ID,
+    CAST(TQRB_Id as varchar(20))		as TQRB_ID,
+    UsrInfo
+FROM PUB.TPARINFO;
+
+TQINFO:
+left join (TPARINFO)
+LOAD 
+	 TQINFO_ID			as TQINFO_ID, 
+     TQINFO_Code		as Info_type_code,  
+     Info_type_dut		as Info_type_dut, 
+     Info_type_frn		as Info_type_frn
+FROM
+TQINFO.qvd
+(qvd);
+
+store TPARINFO into front_end\TPARINFO.qvd;
+drop Table TPARINFO;
+
+tt_volgnummer:
+load
+	TPAR_ID,
+	Naam,
+	VoorNaam,
+	if(Previous(Naam) = Naam and Previous(VoorNaam)=VoorNaam
+		,peek(volgnummer)+1
+		,1
+		)															as volgnummer
+Resident tt_TPAR
+	Order by Naam, VoorNaam;
+
+volgnummer:
+load
+	Naam,
+	VoorNaam
+  where max_volgnr > 1
+;
+load
+	Naam,
+	VoorNaam,
+	max(volgnummer)		as max_volgnr
+Resident tt_volgnummer
+	group by Naam, VoorNaam;
+
+left join (volgnummer)
+load
+	*
+Resident tt_volgnummer;
+
+Left join (tt_TPAR)
+load
+	*
+Resident volgnummer;
+
+drop Table volgnummer, tt_volgnummer;
+
+TQRECHTSTOESTAND:	
+left join (tt_TPAR)
+LOAD 
+	 TQRECHTSTOESTAND_ID, 
+     Legal_entity_code, 
+     Legal_entity_dut, 
+     Legal_entity_frn
+FROM
+TQRECHTSTOESTAND.qvd
+(qvd);
+
+//////////////////////////////////////////////////////////
+//														//
+//		Toevoegen van relaties aan de partijen 			//
+//		dit enkel voor de partij soort Confrator		//
+//														//
+//////////////////////////////////////////////////////////
+
+TPARPAR:
+SQL SELECT 
+	CAST(TPAR_Id as varchar(20)) as TPAR_ID,
+	CAST(TQRELATIE_Id as varchar(20)) as TQRELATIE_ID,
+    CAST(TPAR_Id_Relatie as varchar(20)) as TPAR_ID_RELATIE
+FROM PUB.TPARPAR;
+
+TQRELATIE:
+Right join (TPARPAR)
+SQL SELECT 
+	CAST(TQRELATIE_Id as varchar(20)) as TQRELATIE_ID,
+    "TQRELATIE_Code"
+FROM PUB.TQRELATIE
+	where "TQRELATIE_Code" = 'WERN'
+	   or "TQRELATIE_Code" = 'WERG';
+
+TPARPARSOORT:
+SQL SELECT
+	"record_crc",
+    CAST(TQPARSOORT_Id as varchar(20)) as TQPARSOORT_ID,
+    CAST(TPAR_Id as varchar(20)) as TPAR_ID,
+    "Sequence_Id",
+    "TPARPARSOORT_Id"
+FROM PUB.TPARPARSOORT;
+
+soort_conf:
+LOAD 
+	 TQPARSOORT_ID
+FROM
+TQPARSOORT.qvd
+(qvd)
+	where Type_code = 'CONF';
+
+left join (soort_conf)
+load
+	TQPARSOORT_ID,
+	TPAR_ID
+resident TPARPARSOORT;
+
+left join(tt_TPAR)
+load Distinct
+	TPAR_ID,
+	1				as flag_par_is_conf
+Resident soort_conf;
+
+Left join (soort_conf)
+load
+	TPAR_ID,
+	TPAR_ID_RELATIE,
+	TQRELATIE_Code
+resident TPARPAR;
+
+tt_relatie:
+load
+	if(TQRELATIE_Code='WERG'
+		,TPAR_ID_RELATIE
+		,TPAR_ID
+		)							as TPAR_ID_RELATIE,
+	TPAR_ID
+resident soort_conf
+	where not IsNull(TQRELATIE_Code);
+
+Concatenate(tt_relatie)
+load
+	if(TQRELATIE_Code='WERG'
+		,TPAR_ID_RELATIE
+		,TPAR_ID
+		)							as TPAR_ID_RELATIE,
+	TPAR_ID_RELATIE					as TPAR_ID
+Resident soort_conf
+	where not IsNull(TQRELATIE_Code);
+
+left join (tt_TPAR)
+load
+	*
+Resident tt_relatie;
+
+left join (tt_TPAR)
+load
+	TPAR_ID				as TPAR_ID_RELATIE,
+	VoorNaam&' '&Naam	as Werkgever,
+	Legal_entity_code	as WG_Legal_entity_code, 
+    Legal_entity_dut	as WG_Legal_entity_dut, 
+    Legal_entity_frn	as WG_Legal_entity_frn
+resident tt_TPAR;
+
+TPAR:
+NoConcatenate
+load Distinct
+	*
+Resident tt_TPAR;
+
+ttPartijVorm:
+load Distinct
+	TPAR_ID,
+	PartijVorm
+Resident TPAR;
+	
+
+store TPAR into front_end\TPAR.qvd;
+drop table tt_TPAR, soort_conf, tt_relatie, TPARPAR, TPAR;
+
+TPARSOLVABILITEIT:
+load
+	TPAR_ID,
+	TQSOLVABILITEIT_ID,
+	Comment									as Solvability_comment,
+	DatumSinds								as Solvability_date,
+	Gebruikt
+;
+SQL SELECT 
+//	record_crc,
+	CAST(TPAR_Id as varchar(20)) 			as TPAR_ID,
+//	CAST(TPARSOLVABILITEIT_Id as varchar(20)) as TPARSOLVABILITEIT_ID,
+	DatumSinds,
+	CAST(TQSOLVABILITEIT_Id as varchar(20)) as TQSOLVABILITEIT_ID,
+	Comment,
+	Gebruikt
+FROM pub.TPARSOLVABILITEIT;
+
+STORE * FROM TPARSOLVABILITEIT INTO [front_end\TPARSOLVABILITEIT.qvd] (qvd);
+
+left join (TPARSOLVABILITEIT) 
+LOAD 
+	 TQSOLVABILITEIT_ID, 
+     Solvability_code, 
+     Solvabitiy_message_bg_color,
+     Solvabitiy_message_fg_color, 
+     Solvability_type, 
+     Solvability_dut,
+     Solvability_frn
+FROM
+TQSOLVABILITEIT.qvd
+(qvd);
+
+tt_last_solvability:
+load
+	max(Solvability_date)					as Solvability_date,
+	Solvability_type,
+	TQSOLVABILITEIT_ID
+Resident TPARSOLVABILITEIT
+	group by Solvability_type, TQSOLVABILITEIT_ID;
+	
+left join (tt_last_solvability)
+load
+	*
+Resident TPARSOLVABILITEIT;
+
+
+store tt_last_solvability into front_end\party_solvability.qvd;
+///$tab Adres
+// **************************** TAD ******************
+
+TAD:
+SQL SELECT 
+//	record_crc,
+	CAST(TAD_Id as varchar(20)) as TAD_ID,
+//	CAST(TQAD_Id as varchar(20)) as TQAD_ID,
+//	CAST(Sequence_Id as varchar(20)) as SEQUENCE_ID,
+	Straat,
+	CAST(TQSTRAAT_Id as varchar(20)) as TQSTRAAT_ID,
+	StraatNr,
+	StraatBusNr,
+	CAST(TQPOST_Id as varchar(20)) as TQPOST_ID,
+	Postcode,
+	CAST(TQPLAATS_Id as varchar(20)) as TQPLAATS_ID,
+	Stad,
+	CAST(TQLAND_Id as varchar(20)) as TQLAND_ID
+//	Gebruikt as TAD_Gebruikt
+FROM pub.TAD;
+
+tt_street:
+load Distinct
+	TAD_ID,
+	TQSTRAAT_ID,
+	TQPOST_ID,
+	TQLAND_ID,
+	StraatNr,
+	Straat,
+	StraatBusNr
+Resident TAD;
+
+left join(tt_street)
+LOAD Distinct
+	 TQSTRAAT_ID, 
+     Street_dut,
+     Street_frn
+FROM
+TQSTRAAT.qvd
+(qvd);
+
+Adress:
+load
+	TAD_ID,
+	TQPOST_ID,
+	TQLAND_ID,
+	StraatNr											as Street_nr,
+	StraatBusNr											as Street_bus_nr,
+	if(len(trim(TQSTRAAT_ID))>0 and TQSTRAAT_ID>0
+		,Street_dut
+		,Straat
+		)												as Street_dut,
+	if(len(trim(TQSTRAAT_ID))>0 and TQSTRAAT_ID>0
+		,Street_frn
+		,Straat
+		)												as Street_frn	
+resident tt_street;
+
+TQPOST:
+left join (Adress)
+load Distinct
+	TQPOST_ID,
+	TQARROND_ID,
+	PostCode											as Zipcode
+;
+SQL SELECT 
+	CAST(TQPOST_Id as varchar(20)) 		as TQPOST_ID,
+	CAST(TQARROND_Id as varchar(20))	as TQARROND_ID,
+	PostCode
+FROM pub.TQPOST;
+
+TQARROND:
+left join (Adress)
+LOAD 
+	 TQARROND_ID, 
+     upper(District_code)	as District_code, 
+     District_dut, 
+     District_frn
+FROM
+TQARROND.qvd
+(qvd);
+
+country:
+left join(Adress)
+LOAD 
+	 TQLAND_ID, 
+     Country_code, 
+     Country_dut,
+     Country_frn
+FROM
+TQLAND.qvd
+(qvd);
+
+tt_city:
+load Distinct
+	TAD_ID,
+	TQPLAATS_ID,
+	Stad
+Resident TAD;
+
+left join(tt_city)
+LOAD Distinct
+	 TQPLAATS_ID, 
+     Longitude, 
+     Latitude, 
+     City_dut,
+     City_frn
+FROM
+TQPLAATS.qvd
+(qvd);
+
+Left join (Adress)
+load
+	TAD_ID,
+	TQPLAATS_ID,
+	Longitude,
+	Latitude,
+	if(len(trim(TQPLAATS_ID))>0 and TQPLAATS_ID>0
+		,City_dut
+		,Stad
+		)												as City_dut,
+	if(len(trim(TQPLAATS_ID))>0 and TQPLAATS_ID>0
+		,City_frn
+		,Stad
+		)												as City_frn
+Resident tt_city;
+
+Left join (Adress)
+SQL SELECT 
+//	record_crc,
+//	CAST(TPARAD_Id as varchar(20)) as TPARAD_ID,
+	CAST(TAD_Id as varchar(20)) as TAD_ID,
+	CAST(TPAR_Id as varchar(20)) as TPAR_ID,
+	CAST(TQAD_Id as varchar(20)) as TQAD_ID
+//	CAST(Sequence_Id as varchar(20)) as TPARAD_SEQUENCE_ID,
+//	DatumAdreswijziging,
+//	RedenAdreswijziging
+FROM pub.TPARAD;
+
+Left join (Adress)
+LOAD 
+	 TQAD_ID, 
+     Adress_code, 
+     Adress_dut,
+     Adress_frn
+FROM
+TQAD.qvd
+(qvd);
+
+provincie_gewest:
+Left join (Adress)
+LOAD 
+	 upper(Arrondissement_code)	as District_code, 
+     Provincie_dut				as Province_dut, 
+     Provincie_frn				as Province_frn, 
+     Gewest_dut					as Region_dut, 
+     Gewest_frn					as Region_frn
+FROM
+..\Excel\Arrondissementen.xls
+(biff, embedded labels, table is [Arrondissementen$]);
+
+tt_use_adres:
+load
+	TPAR_ID
+Resident Adress;
+
+for each vAdres in 'MAAT','DOMI','VOAD','ADRW','VERB'
+
+	left join (tt_use_adres)
+	load
+		TPAR_ID,
+		firstValue(TAD_ID)	as $(vAdres)
+	Resident Adress
+		where Adress_code = '$(vAdres)'
+		group by TPAR_ID
+		order by TPAR_ID, TAD_ID desc;
+		
+next
+
+tt_divers:
+load
+	TPAR_ID,
+	firstValue(TAD_ID)	as Divers
+Resident Adress
+	where mixmatch(Adress_code,'MAAT','DOMI','VOAD','ADRW','VERB')=0
+	group by TPAR_ID
+	order by TPAR_ID, TAD_ID desc;
+
+left join (tt_divers)
+load
+	TPAR_ID,
+	TAD_ID		as Divers,
+	Adress_code
+Resident Adress
+	where mixmatch(Adress_code,'MAAT','DOMI','VOAD','ADRW','VERB')=0;
+
+left join(tt_use_adres)
+load
+	*
+Resident tt_divers;
+
+left join(tt_use_adres)
+load Distinct
+	TPAR_ID,
+	PartijVorm
+Resident ttPartijVorm;
+
+drop Table ttPartijVorm;
+
+left join (Adress)
+load Distinct
+	TPAR_ID,
+	if(MixMatch(PartijVorm,'M')>0
+		,if(IsNull(MAAT)
+			,if(IsNull(DOMI)
+				,if(IsNull(ADRW)
+					,if(IsNull(VERB)
+						,if(isnull(VOAD)
+							,Divers
+							,VOAD
+							)
+						,VERB
+						)
+					,ADRW
+					)
+				,DOMI
+				)
+			,MAAT
+			)
+		,if(IsNull(DOMI)
+			,if(IsNull(MAAT)
+				,if(IsNull(ADRW)
+					,if(IsNull(VERB)
+						,if(isnull(VOAD)
+							,Divers
+							,VOAD
+							)
+						,VERB
+						)
+					,ADRW
+					)
+				,MAAT
+				)
+			,DOMI
+			)
+		)									as TAD_ID,
+	if(MixMatch(PartijVorm,'M')>0
+		,if(IsNull(MAAT)
+			,if(IsNull(DOMI)
+				,if(IsNull(ADRW)
+					,if(IsNull(VERB)
+						,if(isnull(VOAD)
+							,Adress_code
+							,'VOAD'
+							)
+						,'VERB'
+						)
+					,'ADRW'
+					)
+				,'DOMI'
+				)
+			,'MAAT'
+			)
+		,if(IsNull(DOMI)
+			,if(IsNull(MAAT)
+				,if(IsNull(ADRW)
+					,if(IsNull(VERB)
+						,if(isnull(VOAD)
+							,Adress_code
+							,'VOAD'
+							)
+						,'VERB'
+						)
+					,'ADRW'
+					)
+				,'MAAT'
+				)
+			,'DOMI'
+			)
+		)									as  Adress_code,
+	true()									as flag_primary_adres
+Resident tt_use_adres;
+
+drop Table tt_use_adres, tt_divers;
+
+store Adress into front_end\Adress.qvd;
+drop table TAD, Adress, tt_city;
+
+
+///$tab Dossier
+// **************************** Dossier ******************
+
+tt_TQSTATUS:
+SQL SELECT 
+	CAST(TQSTATUS_Id as varchar(20)) as TQSTATUS_ID
+FROM pub.TQSTATUS
+	where TQSTATUS_Code = 'TMPL';
+
+let vTQSTATUS_ID = peek('TQSTATUS_ID',0,'tt_TQSTATUS');
+
+drop Table tt_TQSTATUS;
+
+tt_TDOS:
+load
+	TDOS_ID,
+	DossierNaam,
+	TQDOSSOORT_ID,
+	TQSTATUS_ID,
+	TQSTATUS_ID_KLANT,
+	TQSTATUS_ID_AFBET,
+	TQSTATUS_ID_ALARM,
+	TQSTATUS_ID_STADIUM,
+	Taal,
+	HonorariumPerc,
+	HonorariumMax,
+	HonorariumMin,
+	BedragVoorschot,
+	KwijtingsRecht,
+	InningsRecht,
+	TQDIVISIE_ID,
+	VonnisRollen,
+	Etiket,
+	TQGROEP_ID,
+	BedragHoofdsom,
+	TQZEGEL_ID,
+	TQDOORSTORTING_ID,
+	DoorstVolledig,
+	DoorstConfrator,
+	BedragProvisie,
+	DoorstGnChkSaldo,
+	IntrestNaBegDat,
+	Max1IntrestVoet,
+	IntrestvoetDag,
+	IntrestvoetMaand,
+	TQAFKORTING_ID,
+	TPAR_ID_DOSBEHEERDER,
+	TNRS_REK_BEG_ID,
+	TNRS_REK_KANTOOR_ID,
+	TNRS_REK_DERDE_ID,
+	BlokkerenRappel,
+	TPAR_TITULARIS_ID				as Dossier_TPAR_TITULARIS_ID,
+	TPAR_PLAATSVERVANGER_ID			as Dossier_TPAR_PLAATSVERVANGER_ID,
+	TDOS_TEMPLATE_ID,
+	TQSTATUS_ID_TYPE,
+	IsDirty,
+	DossierBeheerder,
+	DossierLocatie,
+	FaseDossier,
+	DoorstEnkelNietVerworven,
+	AutoInboekenBijStop,
+	Archiefnr,
+	TUSER_ID,
+	DoorstortenCode,
+	AfrondEenheidDoorstorten,
+	AfrondTypeDoorstorten,
+	TQFORMULE_DOORST_ID,
+	DoorstInningsrecht,
+	Provisie,
+	Compensatie,
+	InningsrechtAutomatisch,
+	KwijtingsrechtAutomatisch,
+	ProDeo,
+	TQINTREST_ID,
+	TQSTATUS_ID_STOP,
+	UsrCreatie,
+	UsrWijziging,
+	DatumWijziging,
+	if(len(trim(DatumCreatie))=0
+		,0
+		,DatumCreatie
+		)									as DatumCreatie
+  where (mixmatch(TQSTATUS_ID_TYPE,'$(vTQSTATUS_ID)')=0
+     or len(trim(TQSTATUS_ID_TYPE)) = 0)
+    and mixmatch(DossierNaam,'KL','BH')=0
+;
+SQL 
+SELECT 
+//	record_crc,                  
+	CAST(TDOS_ID as varchar(20)) as TDOS_ID,
+	DossierNaam,
+	CAST(TQDOSSOORT_Id as varchar(20)) as TQDOSSOORT_ID,
+	CAST(TQSTATUS_Id as varchar(20)) as TQSTATUS_ID,
+	CAST(TQSTATUS_Id_Klant as varchar(20)) as TQSTATUS_ID_KLANT,
+	CAST(TQSTATUS_Id_Afbet as varchar(20)) as TQSTATUS_ID_AFBET,
+	CAST(TQSTATUS_Id_Alarm as varchar(20)) as TQSTATUS_ID_ALARM,
+	CAST(TQSTATUS_Id_Stadium as varchar(20)) as TQSTATUS_ID_STADIUM,
+	Taal,
+	HonorariumPerc,
+	HonorariumMax,
+	HonorariumMin,
+	BedragVoorschot,
+	KwijtingsRecht,
+	InningsRecht,
+	CAST(TQDIVISIE_Id as varchar(20)) as TQDIVISIE_ID,
+	VonnisRollen,
+	Etiket,
+	CAST(TQGROEP_Id as varchar(20)) as TQGROEP_ID,
+	BedragHoofdsom,
+	CAST(TQZEGEL_Id as varchar(20)) as TQZEGEL_ID,
+	CAST(TQDOORSTORTING_Id as varchar(20)) as TQDOORSTORTING_ID,
+	DoorstVolledig,
+	DoorstConfrator,
+	BedragProvisie,
+	DoorstGnChkSaldo,
+	IntrestNaBegDat,
+	Max1IntrestVoet,
+	IntrestvoetDag,
+	IntrestvoetMaand,
+	CAST(TQAFKORTING_Id as varchar(20)) as TQAFKORTING_ID,
+	CAST(TPAR_Id_Dosbeheerder as varchar(20)) as TPAR_ID_DOSBEHEERDER,
+	CAST(TNRS_Rek_Beg_Id as varchar(20)) as TNRS_REK_BEG_ID,
+	CAST(TNRS_Rek_Kantoor_Id as varchar(20)) as TNRS_REK_KANTOOR_ID,
+	CAST(TNRS_Rek_Derde_Id as varchar(20)) as TNRS_REK_DERDE_ID,
+	BlokkerenRappel,
+	CAST(TPAR_Titularis_Id as varchar(20)) as TPAR_TITULARIS_ID,
+	CAST(TPAR_Plaatsvervanger_Id as varchar(20)) as TPAR_PLAATSVERVANGER_ID,
+	CAST(TDOS_Template_Id as varchar(20)) as TDOS_TEMPLATE_ID,
+	CAST(TQSTATUS_Id_Type as varchar(20)) as TQSTATUS_ID_TYPE,
+	IsDirty,
+	DossierBeheerder,
+	DossierLocatie,
+	FaseDossier,
+	DoorstEnkelNietVerworven,
+	AutoInboekenBijStop,
+	Archiefnr,
+	CAST(TUSER_Id as varchar(20)) as TUSER_ID,
+	DoorstortenCode,
+	AfrondEenheidDoorstorten,
+	AfrondTypeDoorstorten,
+	CAST(TQFORMULE_Doorst_Id as varchar(20)) as TQFORMULE_DOORST_ID,
+	DoorstInningsrecht,
+	Provisie,
+	Compensatie,
+	InningsrechtAutomatisch,
+	KwijtingsrechtAutomatisch,
+	ProDeo,
+	CAST(TQINTREST_Id as varchar(20)) as TQINTREST_ID,
+	CAST(TQSTATUS_Id_Stop as varchar(20)) as TQSTATUS_ID_STOP,
+	UsrCreatie,
+	UsrWijziging,
+    DatumCreatie,
+	DatumWijziging
+FROM pub.TDOS;
+
+tt_TDOSLIJN:
+SQL SELECT 
+//	record_crc,
+	CAST(TDOSLIJN_Id as varchar(20)) as TDOSLIJN_ID,
+	CAST(TDOS_Id as varchar(20)) as TDOS_ID,
+	CAST(Volgnr as varchar(20)) as VOLGNR,	
+	CAST(TQBOEKING_Id as varchar(20)) as TQBOEKING_ID,
+	CAST(TQMUNT_Id as varchar(20)) as TQMUNT_ID,
+	Bedrag,
+	Koers,
+	CAST(TQAARD_Id as varchar(20)) as TQAARD_ID,
+	CAST(TQKOST_Id as varchar(20)) as TQKOST_ID,
+	Conversie_Id,
+	DatumSorteer,
+	DatumBoeking,
+	CAST(TNRS_Rek_Id as varchar(20)) as TNRS_REK_ID,
+	CAST(TPAR_Id as varchar(20)) as TPAR_ID,
+	Referte,
+	Aantal,
+	Gefixeerd,
+	TimeStampLaatsteHerberekening,
+	ReferteDec,
+	VolledigBetaald,
+	CD_BTW,
+	BTWPercentage,
+	BedragBTW,
+	OnderdrukAfdrukFA //,
+//	VolledigGefactureerd --> Nog niet in db op orwitagt01
+FROM pub.TDOSLIJN;
+
+left join (tt_TDOSLIJN)
+load
+	TDOS_ID,
+	max(DatumBoeking)		as Last_book_date
+resident tt_TDOSLIJN
+	group by TDOS_ID;
+
+left join(tt_TDOSLIJN)
+load
+	TDOSLIJN_ID,
+	makedate(year(TimeStampCreatie),month(TimeStampCreatie),day(TimeStampCreatie))					as DatumCreatie_DOSLIJN,
+	UsrCreatie																						as TDOSLIJNUsrCreatie,
+	UsrWijziging																					as TDOSLIJNUsrWijziging
+;
+SQL SELECT 
+//	"Owning_Entity",
+	CAST("Owning_Id" as varchar(20)) 		as  "TDOSLIJN_ID",  
+    "record_crc",
+    TimeStampCreatie,
+    TimestampGeopend,
+    TimeStampInactief,
+    TimeStampWijziging,
+    UsrCreatie,
+    UsrGeopend,
+    UsrInactief,
+    UsrWijziging,
+    VersieCreatie,
+    VersieInactief,
+    VersieWijziging
+FROM PUB.TTIMESTAMP
+	where Owning_Entity = 'TDOSLIJN';
+
+left join (tt_TDOS) 
+load
+	*
+Resident tt_TDOSLIJN;
+
+left join (tt_TDOS)
+SQL SELECT 
+	CAST(TDOSLIJN_Id as varchar(20)) as TDOSLIJN_ID,
+	FirmaNr,
+    Boekjaar,
+    DagboekNr,
+    StukNr,
+    StukVolgNr,
+    KwitantieBoek,
+    KwitantieBoekBlad,
+    OGM,
+    CAST(TOGMLIJN_Id as varchar(20)) as TOGMLIJN_ID,
+    CODAVolgnr,
+    DetailVolgNr,
+    CAST(TDOSAFBDET_Id as varchar(20)) as TDOSAFBDET_ID
+FROM PUB.TDOSLIJNORAS;
+
+tt_TDOSDOS_sub:
+SQL SELECT 
+//	"record_crc",
+    CAST(TQLINK_Id as varchar(20))		as TQLINK_Id
+//    "TQLINK_Code",
+//    Gebruikt
+FROM PUB.TQLINK
+	where TQLINK_Code = 'SUB';
+
+TDOSDOS:
+left join (tt_TDOSDOS_sub)
+load
+	*
+;
+SQL SELECT 
+//  record_crc,
+//	CAST(TDOS_Id_Hoofd as varchar(20)) as TDOS_ID,
+	CAST(TDOS_ID_HOOFD as varchar(20)) as TDOS_ID_HOOFD,
+//	CAST(Sequence_Id as varchar(20)) as TDOSDOS_SEQUENCE_ID,
+	CAST(TDOS_Id_Sub as varchar(20)) as TDOS_ID_SUB,
+	CAST(TQLINK_Id as varchar(20)) as TQLINK_ID
+FROM pub.TDOSDOS;
+
+Concatenate (tt_TDOSDOS_sub)
+load Distinct
+	TDOS_ID_HOOFD,
+	TDOS_ID_HOOFD		as TDOS_ID_SUB,
+	TQLINK_ID
+Resident tt_TDOSDOS_sub;
+	
+outer join (tt_TDOSDOS_sub)
+load Distinct
+	TDOS_ID									as TDOS_ID_SUB,
+	if(Last_book_date>DatumCreatie
+		,Last_book_date
+		,DatumCreatie
+		)									as tt_Filter_date
+Resident tt_TDOS;
+
+TDOSDOS_sub:
+NoConcatenate
+load
+	if(len(trim(TDOS_ID_HOOFD))=0
+		,TDOS_ID_SUB
+		,TDOS_ID_HOOFD
+		)									as TDOS_ID_HOOFD,
+	tt_Filter_date,
+	TDOS_ID_SUB
+resident tt_TDOSDOS_sub;
+
+drop Table tt_TDOSDOS_sub;
+
+left join(TDOSDOS_sub)
+load
+	TDOS_ID_HOOFD,
+	max(tt_Filter_date)						as Filter_date
+resident TDOSDOS_sub
+	group by TDOS_ID_HOOFD;
+
+left join (TDOSDOS_sub)
+load
+	*,
+	TDOS_ID									as TDOS_ID_SUB
+Resident tt_TDOS;
+
+Dossier:
+NoConcatenate
+load
+	*
+Resident TDOSDOS_sub
+	where year(Filter_date) >= $(vStartYear)
+	;
+
+TDOSLIJNDOORST:
+left join (Dossier)
+load
+	TDOSLIJN_ID,
+	TDOSLIJNDOORST_ID,
+	Referte								as Deposit_reference,
+	TDOSLIJNDOORST_TQDOORSTORTING_ID
+;
+SQL SELECT 
+//	record_crc,
+	CAST(TDOSLIJNDOORST_Id as varchar(20)) as TDOSLIJNDOORST_ID,
+	CAST(TDOSLIJN_Id as varchar(20)) as TDOSLIJN_ID,
+//	Manueel,
+	CAST(TQDOORSTORTING_Id as varchar(20)) as TDOSLIJNDOORST_TQDOORSTORTING_ID,
+	Referte
+FROM pub.TDOSLIJNDOORST;
+
+TDOSLIJNKOST:
+left join (Dossier)
+SQL SELECT 
+//	record_crc,
+	CAST(TDOSLIJNKOST_Id as varchar(20)) as TDOSLIJNKOST_ID,
+	CAST(TDOSLIJN_Id as varchar(20)) as TDOSLIJN_ID,
+	BedragVastRecht,
+	RepNr,
+//	Gefixeerd,
+	BedragRol,
+//	CAST(TQKOSTVR_Id as varchar(20)) as TQKOSTVR_ID,
+	Comment,
+	CAST(TPAR_Titularis_Id as varchar(20)) as TPAR_TITULARIS_ID,
+	CAST(TPAR_Plaatsvervanger_Id as varchar(20)) as TPAR_PLAATSVERVANGER_ID,
+	Confrator,
+	CAST(TPAR_Confrator_Id as varchar(20)) as TPAR_CONFRATOR_ID,
+	CAST(TPAR_Confrator_Vervanger_Id as varchar(20)) as TPAR_CONFRATOR_VERVANGER_ID,
+	CAST(TPAR_Confrator_Kantoor_Id as varchar(20)) as TPAR_CONFRATOR_KANTOOR_ID,
+	Referte_Confrator,
+	BedragConfrator,
+//	CAST(TNRS_Confrator_Rek_Id as varchar(20)) as TNRS_CONFRATOR_REK_ID,
+//	CAST(TQBEDRAGEXTRA_Id as varchar(20)) as TQBEDRAGEXTRA_ID,
+	DatumRol,
+	CAST(TQRB_Id as varchar(20)) as TQRB_ID,
+	Owning_RB_Entity,
+	Owning_RB_Id,
+	BedragExtra,
+	DatumRolUitgevoerd,
+	BedragRecht,
+	CAST(TQKAMER_Id as varchar(20)) as TQKAMER_ID,
+	CAST(TQZAAK_Id as varchar(20)) as TQZAAK_ID,
+	BedragBTWConfrater,
+	BedragBasisConfrater,
+	BedragBBConfrater,
+	BedragUitschot
+FROM pub.TDOSLIJNKOST;
+
+TQAARD:
+left join (Dossier)
+LOAD 
+	 TQAARD_ID, 
+	 InRepertorium,
+	 IsAkte,
+	 NaarCBB,
+	 Overdrachtbericht,
+	 Bevel,
+	 Betekening,
+	 BetekeningBevel,	
+	 Rolzetting,
+	 VerkoopdatumVerplicht,
+	 Beslagbericht,	
+	 Gebruikt,
+	 IsKost,
+     Nature_booking_type_code, 
+     Nature_booking_type_dut, 
+     Nature_booking_type_frn
+FROM
+TQAARD.qvd
+(qvd);
+
+TQKOST:
+left join (Dossier)
+LOAD 
+	 TQKOST_ID, 
+     Kost_code, 
+     ORAS_RekNr, 
+     Kost_dut, 
+     Kost_frn
+FROM
+TQKOST.qvd
+(qvd);
+
+TQBOEKING:
+left join (Dossier)
+LOAD 
+	 TQBOEKING_ID, 
+     Booking_code, 
+     TQBOEKINGGROEP_ID, 
+//     ORAS_RekNr, 
+     Booking_dut, 
+     Booking_frn
+FROM
+TQBOEKING.qvd
+(qvd);
+
+TQBOEKINGGROEP:
+left join (Dossier)
+LOAD 
+	 TQBOEKINGGROEP_ID, 
+     Booking_group_code, 
+     Flag_dossier, 
+     Flag_finacial, 
+     Booking_group_dut, 
+     Booking_group_frn
+FROM
+TQBOEKINGGROEP.qvd
+(qvd);
+
+TQDOSSOORT:
+left join (Dossier)
+LOAD 	
+ 	 TQDOSSOORT_ID, 
+     Dossier_type_code, 
+     Dossier_type_bg_color, 
+     Dossier_type_fg_color, 
+     Dossier_type_dut, 
+     Dossier_type_frn
+FROM
+TQDOSSOORT.qvd
+(qvd);
+
+TQSTATUS:
+left join (Dossier)
+LOAD 
+	 TQSTATUS_ID, 
+     Status_code, 
+     Afgesloten, 
+     Gestopt, 
+     if(Afgesloten=1 
+       and Gestopt=0
+     	,1
+     	,0
+     	)							as Geregeld,
+     Status_bg_color, 
+     Status_fg_color, 
+     GestoptDoorKlant, 
+     Status_dut, 
+     Status_frn
+FROM
+TQSTATUS.qvd
+(qvd);
+
+
+TQSTATUS:
+left join (Dossier)
+LOAD 
+	 TQSTATUS_ID		as TQSTATUS_ID_STADIUM, 
+     Status_code		as Status_stadium_code,  
+     Status_dut			as Status_stadium_dut, 
+     Status_frn			as Status_stadium_frn
+FROM
+TQSTATUS.qvd
+(qvd);
+
+TQSTATUS:
+left join (Dossier)
+LOAD 
+	 TQSTATUS_ID		as TQSTATUS_ID_ALARM, 
+     Status_code		as Status_alarm_code,  
+     Status_dut			as Status_alarm_dut, 
+     Status_frn			as Status_alarm_frn
+FROM
+TQSTATUS.qvd
+(qvd);
+
+TQSTATUS:
+left join (Dossier)
+LOAD 
+	 TQSTATUS_ID		as TQSTATUS_ID_AFBET, 
+     Status_code		as Status_afbet_code,  
+     Status_dut			as Status_afbet_dut, 
+     Status_frn			as Status_afbet_frn
+FROM
+TQSTATUS.qvd
+(qvd);
+
+TQSTATUS:
+left join (Dossier)
+LOAD 
+	 TQSTATUS_ID		as TQSTATUS_ID_KLANT, 
+     Status_code		as Status_klant_code,  
+     Status_dut			as Status_klant_dut, 
+     Status_frn			as Status_klant_frn
+FROM
+TQSTATUS.qvd
+(qvd);
+
+TQSTATUS:
+left join (Dossier)
+LOAD 
+	 TQSTATUS_ID		as TQSTATUS_ID_STOP, 
+     Status_code		as Status_stop_code,  
+     Status_dut			as Status_stop_dut, 
+     Status_frn			as Status_stop_frn
+FROM
+TQSTATUS.qvd
+(qvd);
+	
+drop Table TDOSDOS_sub, tt_TDOS, tt_TDOSLIJN;
+
+// **************************** TDOSLIJNDOSLIJN ******************
+
+tt_TDOSLIJNDOSLIJN:
+load
+	TDOSLIJNDOSLIJN_ID,
+	TQLINK_ID,
+	Bedrag,
+	TDOSLIJN_SOURCE_ID			as Source,
+	TDOSLIJN_TARGET_ID			as Target
+;
+SQL SELECT 
+//	record_crc,
+	CAST(TDOSLIJNDOSLIJN_Id as varchar(20)) as TDOSLIJNDOSLIJN_ID,
+	CAST(TQLINK_Id as varchar(20)) as TQLINK_ID,
+	CAST(TDOSLIJN_Source_Id as varchar(20)) as TDOSLIJN_SOURCE_ID,
+//	CAST(TDOS_Source_Id as varchar(20)) as TDOS_SOURCE_ID,
+	CAST(TDOSLIJN_Target_Id as varchar(20)) as TDOSLIJN_TARGET_ID,
+//	CAST(TDOS_Target_Id as varchar(20)) as TDOS_TARGET_ID,
+	Bedrag
+//	IsDirty,
+//	IsBerekendeLijn
+FROM pub.TDOSLIJNDOSLIJN;
+
+left join (tt_TDOSLIJNDOSLIJN)
+LOAD Distinct
+	TDOSLIJN_ID					as Source,
+	Booking_code				as Booking_code_source,
+	Nature_booking_type_code	as Nature_booking_type_code_Source
+Resident Dossier;
+
+left join (tt_TDOSLIJNDOSLIJN)
+LOAD Distinct
+	TDOSLIJN_ID					as Target,
+	Booking_code				as Booking_code_Target,
+	Nature_booking_type_code	as Nature_booking_type_code_Target
+Resident Dossier;
+
+TDOSLIJNDOSLIJN:
+CrossTable(Type_doslijn,TDOSLIJN_ID,7)
+load
+	TDOSLIJNDOSLIJN_ID,
+	TQLINK_ID,
+	Bedrag,
+	Booking_code_source,
+	Booking_code_Target,
+	Nature_booking_type_code_Target,
+	Nature_booking_type_code_Source,
+	Target,
+	Source
+Resident tt_TDOSLIJNDOSLIJN;
+
+left join(TDOSLIJNDOSLIJN)
+LOAD 
+	 TQLINK_ID, 
+     Link_code, 
+     Link_dut, 
+     Link_frn
+FROM
+TQLINK.qvd
+(qvd);
+
+
+store TDOSLIJNDOSLIJN into front_end\TDOSLIJNDOSLIJN.qvd;
+drop table TDOSLIJNDOSLIJN, tt_TDOSLIJNDOSLIJN;
+
+// **************************** TDOSLIJNBTW ******************
+
+TDOSLIJNBTW:
+SQL SELECT 
+//	record_crc,
+	CAST(TDOSLIJNBTW_Id as varchar(20)) as TDOSLIJNBTW_ID,
+	CAST(TDOSLIJN_Id as varchar(20)) as TDOSLIJN_ID,
+	BedragBasis,
+	BTWPercentage,
+	BedragBTW
+//	Manueel
+//	CAST(Sequence_Id as varchar(20)) as SEQUENCE_ID
+FROM pub.TDOSLIJNBTW;
+
+store TDOSLIJNBTW into front_end\TDOSLIJNBTW.qvd;
+drop table TDOSLIJNBTW;
+
+// **************************** TDOSSALDO ******************
+
+TDOSSALDO:
+SQL SELECT 
+//	record_crc,
+	CAST(TDOSSALDO_Id as varchar(20)) as TDOSSALDO_ID,
+	CAST(TDOS_Id as varchar(20)) as TDOS_ID,
+	CAST(TQSALDO_Id as varchar(20)) as TQSALDO_ID,
+	Bedrag,
+	BedragGnVoorlopig,
+	BedragGestopt
+FROM pub.TDOSSALDO;
+
+Left join (TDOSSALDO)
+LOAD 
+	 TQSALDO_ID, 
+     Saldo_code, 
+     Saldo_dut, 
+     Saldo_frn
+FROM
+TQSALDO.qvd
+(qvd);
+
+store TDOSSALDO into front_end\TDOSSALDO.qvd;
+drop table TDOSSALDO;
+
+// **************************** TDOSPAR ******************
+
+tt_TDOSPAR:
+SQL SELECT 
+//	record_crc,
+	CAST(TDOSPAR_Id as varchar(20)) as TDOSPAR_ID,
+	CAST(TDOS_Id as varchar(20)) as TDOS_ID,
+	CAST(TDOSLIJN_Id as varchar(20)) as TDOSLIJN_ID,
+	CAST(TQPARSOORT_Id as varchar(20)) as TQPARSOORT_ID,
+	CAST(Sequence_Id as varchar(20)) as TDOSPAR_SEQUENCE_ID,
+	CAST(TPAR_Id as varchar(20)) as TPAR_ID
+//	CAST(TQNRS_Id_Bank as varchar(20)) as TQNRS_ID_BANK,
+//	CAST(TPAR_IdContact as varchar(20)) as TPAR_IDCONTACT,
+//	CAST(TQRELATIE_Id_Hoed as varchar(20)) as TQRELATIE_ID_HOED,
+//	CAST(TPAR_Id_Hoed as varchar(20)) as TPAR_ID_HOED,
+//	Naam_Hoed,
+//	RegistratieNr as TDOSPAR_RegistratieNr,
+//	Naam as TDOSPAR_Naam,
+//	VoorNaam as TDOSPAR_VoorNaam,
+//	TussenNaam as TDOSPAR_TussenNaam,
+//	Beroep as TDOSPAR_Beroep,
+//	Taal as TDOSPAR_Taal,
+//	CAST(TQSOLVABILITEIT_Id_Adres as varchar(20)) as TQSOLVABILITEIT_ID_ADRES,
+//	RegistratieNr_Contact,
+//	Naam_Contact,
+//	CAST(TQBURGSTAND_Id as varchar(20)) as TDOSPAR_TQBURGSTAND_ID,
+//	CAST(TQLAND_Id as varchar(20)) as TQLAND_ID,
+//	CAST(TQPLAATS_Id as varchar(20)) as TQPLAATS_ID,
+//	Stad,
+//	CAST(TQPOST_Id as varchar(20)) as TQPOST_ID,
+//	Postcode,
+//	CAST(TQSTRAAT_Id as varchar(20)) as TQSTRAAT_ID,
+//	Straat,
+//	Straat2,
+//	StraatNr,
+//	StraatBusNr,
+//	CAST(TDOSPAR_TDOS_Id as varchar(20)) as TDOSPAR_TDOS_ID,
+//	PartijVorm as TDOSPAR_PartijVorm,
+//	Rijksregisternr as TDOSPAR_Rijksregisternr,
+//	KBOnr as TDOSPAR_KBOnr,
+//	CAST(TQSOLVABILITEIT_Id_Financieel as varchar(20)) as TQSOLVABILITEIT_ID_FINANCIEEL,
+//	CAST(TDOSPAR_Id_Hoofd as varchar(20)) as TDOSPAR_ID_HOOFD,
+//	DatumGeboorte as TDOSPAR_DatumGeboorte,
+//	DatumGeboorte_C as TDOSPAR_DatumGeboorte_C
+FROM pub.TDOSPAR;
+
+outer join(TPARPARSOORT)
+load Distinct
+	TQPARSOORT_ID,
+	TPAR_ID
+Resident tt_TDOSPAR;
+
+left join (TPARPARSOORT)
+LOAD 
+	 TQPARSOORT_ID, 
+     Type_code, 
+     Type_dut, 
+     Type_frn
+FROM
+TQPARSOORT.qvd
+(qvd);
+
+outer join (tt_TDOSPAR)
+load Distinct
+	TPAR_ID,
+	TQPARSOORT_ID,
+	Type_code, 
+    Type_dut, 
+    Type_frn
+Resident TPARPARSOORT;
+
+TDOSPAR:
+NoConcatenate
+LOAD Distinct
+	 TDOSPAR_ID,
+	 1					as Flag_dossier_id,
+	 TDOSPAR_SEQUENCE_ID,
+	 Type_code, 
+     Type_dut, 
+     Type_frn,
+     TDOS_ID,
+     TPAR_ID
+resident tt_TDOSPAR
+	where TDOSLIJN_ID = 0;
+
+left Join (TDOSPAR)
+LOAD Distinct
+	TDOS_ID,
+	TDOSLIJN_ID
+Resident Dossier;
+
+Concatenate(TDOSPAR)
+LOAD Distinct
+	 TDOSPAR_ID,
+	 0						as Flag_dossier_id,
+	 TDOSPAR_SEQUENCE_ID,
+	 Type_code, 
+     Type_dut, 
+     Type_frn,
+     TDOS_ID,
+     TPAR_ID,
+     TDOSLIJN_ID
+resident tt_TDOSPAR
+	where TDOSLIJN_ID <> 0;
+	
+tt_to_confrator:
+load Distinct
+	TPAR_CONFRATOR_ID		as To_confrator_id,
+	TPAR_CONFRATOR_ID		as TPAR_ID,
+	TDOSLIJN_ID,
+	TDOS_ID
+Resident Dossier
+	where IsAkte=1;
+	
+left join (tt_TDOSPAR)
+load
+	TPAR_ID,
+	TQPARSOORT_ID
+Resident TPARPARSOORT;	
+
+
+
+left join (tt_to_confrator)
+load
+	TDOSLIJN_ID,
+	TPAR_ID,
+	TDOSPAR_SEQUENCE_ID,
+	'x'				as exists
+Resident TDOSPAR;
+	
+Left join (TDOSPAR)
+load Distinct
+	To_confrator_id,
+	TPAR_ID,
+	TDOSLIJN_ID
+Resident tt_to_confrator
+	where exists = 'x'
+	  and To_confrator_id>0;	
+
+Concatenate(TDOSPAR)
+load Distinct
+	To_confrator_id&TDOSLIJN_ID	as TDOSPAR_ID,
+	To_confrator_id,	
+	TDOSPAR_SEQUENCE_ID,
+	TPAR_ID,
+	TDOSLIJN_ID,
+	TDOS_ID,
+	2							as Flag_dossier_id
+Resident tt_to_confrator
+	where exists <> 'x'
+	  and To_confrator_id>0;	
+	
+left join (TDOSPAR)
+load
+	TPAR_ID,
+	TQPARSOORT_ID,
+	Type_code, 
+    Type_dut, 
+    Type_frn
+Resident TPARPARSOORT;
+
+drop Table TPARPARSOORT, tt_to_confrator;
+
+	
+tt_dossier:
+CrossTable(Type_code,TPAR_ID,2)
+LOAD Distinct	 
+     TDOS_ID,     
+     TDOSLIJN_ID,
+     TPAR_TITULARIS_ID					as C_TIT,
+     TPAR_PLAATSVERVANGER_ID			as C_PLVV,
+     TPAR_CONFRATOR_ID					as C_CONF,
+     TPAR_CONFRATOR_VERVANGER_ID		as C_CONFPLVV,
+     TPAR_CONFRATOR_KANTOOR_ID			as C_CONFKNT,
+     TPAR_ID_DOSBEHEERDER				as C_DOSBEH,
+     Dossier_TPAR_TITULARIS_ID			as C_DOSTIT,
+     Dossier_TPAR_PLAATSVERVANGER_ID	as C_DOSPLVV,
+     TPAR_ID							as C_DOSL     
+Resident Dossier
+	where Gefixeerd>0;
+	
+left join (tt_dossier)	
+LOAD * INLINE [
+    Type_code, Type_dut, Type_frn
+    C_TIT, Titularis, Titulaire
+    C_PLVV, Plaatsvervanger, suppléant
+    C_CONF, Confrater, Confrère
+    C_CONFPLVV, Confrater vervanger, Confrère suppléant
+    C_CONFKNT, Confrater kantoor, Confrère cabinet
+    C_DOSBEH, Dossierbeheerder, Gestionnaire de dossier&
+    C_DOSTIT, Titularis dossier, Titulaire de dossier
+    C_DOSPLVV, Plaatsvervanger dossier, Suppléant de dossier
+    C_DOSL,Partij dossier lijn, Parti line dossier
+];
+
+Concatenate(TDOSPAR)
+LOAD Distinct
+	*,
+	0					as Flag_dossier_id
+Resident tt_dossier;
+
+left join (Dossier)
+LOAD Distinct
+	 'x'				as flag_tdospar,
+     TDOS_ID
+Resident TDOSPAR;
+
+store TDOSPAR into front_end\TDOSPAR.qvd;
+drop table TDOSPAR, tt_TDOSPAR, tt_dossier;
+
+
+TDOSTITEL:
+SQL SELECT Blad,
+    Boek,
+    DatumRep,
+    "Owning_RB_Entity",
+    CAST(Owning_RB_Id as varchar(20))		as OWNING_RB_ID,
+    "record_crc",
+    Referte,
+    CAST(TDOS_Id as varchar(20))			as TDOS_ID,
+    CAST(TDOSTITEL_Id as varchar(20))		as TDOSTITEL_ID,
+    TimestampTitel,
+    CAST(TPAR_Rep_Id as varchar(20))		as TPAR_REP_ID,
+    CAST(TQBEVOEGDHEID_Id as varchar(20))	as TQBEVOEGDHEID_ID,
+    CAST(TQFORMULE_Id as varchar(20))		as TQFORMULE_ID,
+    CAST(TQKAMER_Id as varchar(20))			as TQKAMER_ID,
+    CAST(TQRB_Id as varchar(20))			as TQRB_ID,
+    CAST(TQTITEL_Id as varchar(20))			as TQTITEL_ID,
+    CAST(TQUITSPRAAK_Id as varchar(20))		as TQUITSPRAAK_ID,
+    Vak,
+    VonnisRollen
+FROM PUB.TDOSTITEL;
+
+store TDOSTITEL into front_end\TDOSTITEL.qvd;
+drop table TDOSTITEL;
+
+TDOSVERSCHIJNING:
+SQL SELECT DatumLaatsteDag,
+    "Owning_RB_Entity",
+    CAST(Owning_RB_Id as varchar(20))			as OWNING_RB_ID,
+    "record_crc",
+    CAST(TDOS_Id as varchar(20))				as TDOS_ID,
+    CAST(TDOSVERSCHIJNING_Id as varchar(20))	as TDOSVERSCHIJNING_ID,
+    TimeStampVerschijning,
+    CAST(TQBEVOEGDHEID_Id as varchar(20))		as TQBEVOEGDHEID_ID,
+    CAST(TQKAMER_Id as varchar(20))				as TQKAMER_ID,
+    CAST(TQRB_Id as varchar(20))				as TQRB_ID,
+    TaalRB
+FROM PUB.TDOSVERSCHIJNING;
+
+//TQARROND
+//TQKANTON
+
+TQRBARROND:
+LOAD 
+//	"record_crc",
+    TQRB_ID,
+    TQARROND_ID,
+    TPAR_ID,
+    TQRBARROND_ID,
+//    Gebruikt,
+//    "TQZETEL_Id",
+    Taal										as TaalRB;
+SQL SELECT 
+	CAST(TQARROND_Id as varchar(20))			as TQARROND_ID,
+	CAST(TQRB_Id as varchar(20))				as TQRB_ID,
+	CAST(TPAR_Id as varchar(20))				as TPAR_ID,
+	CAST(TQRBARROND_Id as varchar(20))			as TQRBARROND_ID,
+	Taal											
+FROM PUB.TQRBARROND;
+
+
+left join(TQRBARROND)
+LOAD
+	 TPAR_ID,  
+     Zipcode			as ARROND_ZIP
+FROM
+[.\front_end\Adress.qvd]
+(qvd)
+//	Where Adress_code = 
+;
+
+left join(TDOSVERSCHIJNING)
+load
+	TQRB_ID,
+	TQARROND_ID		as OWNING_RB_ID,
+	'TQARROND'		as Owning_RB_Entity,
+	TaalRB,
+	ARROND_ZIP
+Resident TQRBARROND;
+
+
+TQRBKANTON:
+LOAD
+    TPAR_ID,
+    TQKANTON_ID,
+    TQRBARROND_ID,
+    TQRBKANTON_ID;
+SQL SELECT 
+    CAST(TPAR_Id as varchar(20))				as TPAR_ID,
+    CAST(TQKANTON_Id as varchar(20))			as TQKANTON_ID,
+    CAST(TQRBARROND_Id as varchar(20))			as TQRBARROND_ID,
+    CAST(TQRBKANTON_Id as varchar(20))			as TQRBKANTON_ID
+FROM PUB.TQRBKANTON;
+
+left join(TQRBKANTON)
+LOAD
+	 TPAR_ID,  
+     Zipcode			as KANTON_ZIP
+FROM
+[.\front_end\Adress.qvd]
+(qvd)
+//	Where Adress_code = 
+;
+
+left join(TQRBKANTON)
+load
+	TQRB_ID,
+	TQARROND_ID,
+	TaalRB
+Resident TQRBARROND;
+
+left join(TQRBKANTON)
+load
+	TQRB_ID,
+	TaalRB,
+	OWNING_RB_ID		as TQARROND_ID,
+	'x'					as flag_us
+Resident TDOSVERSCHIJNING
+	where Owning_RB_Entity = 'TQARROND';
+
+left join(TDOSVERSCHIJNING)
+load Distinct
+	TQKANTON_ID		as OWNING_RB_ID,
+	'TQKANTON'		as Owning_RB_Entity,
+	KANTON_ZIP
+Resident TQRBKANTON
+	where len(trim(flag_us))>0;
+
+store TDOSVERSCHIJNING into front_end\TDOSVERSCHIJNING.qvd;
+drop table TDOSVERSCHIJNING, TQRBARROND, TQRBKANTON;
+
+TDOSINFO:
+SQL SELECT 
+	DatumInfo,
+    Omschrijving,
+    OmschrijvingRTF,
+    "record_crc",
+    "Sequence_Id",
+    CAST(Sequence_Id as varchar(20))			as SEQUENCE_ID,
+    Taal,    
+    CAST(TDOS_Id as varchar(20))				as TDOS_ID,
+    "TDOSINFO_Id",
+    CAST(TDOSINFO_Id as varchar(20))			as TDOSINFO_ID,
+    "TDOSPAR_Id",
+    CAST(TDOSPAR_Id as varchar(20))				as TDOSPAR_ID,
+    TimestampInfo,
+    "TQINFO_Id",
+    CAST(TQINFO_Id as varchar(20))				as TQINFO_ID,
+    "TUSER_Id_Aan",
+    CAST(TUSER_Id_Aan as varchar(20))			as TUSER_ID_AAN,
+    UsrInfo
+FROM PUB.TDOSINFO;
+
+TQINFO:
+left join (TDOSINFO)
+LOAD 
+	 TQINFO_ID			as TQINFO_ID, 
+     TQINFO_Code		as DosInfo_type_code,  
+     Info_type_dut		as DosInfo_type_dut, 
+     Info_type_frn		as DosInfo_type_frn
+FROM
+TQINFO.qvd
+(qvd);
+
+timestamp:
+left join(TDOSINFO)
+load
+	TDOSINFO_ID,
+	makedate(year(TimeStampCreatie),month(TimeStampCreatie),day(TimeStampCreatie))					as DOSINFOCreatie,
+	UsrCreatie																						as DOSINFOUsrCreatie
+;
+SQL SELECT 
+//	"Owning_Entity",
+	CAST("Owning_Id" as varchar(20)) 		as  "TDOSINFO_ID",  
+    "record_crc",
+    TimeStampCreatie,
+    TimestampGeopend,
+    TimeStampInactief,
+    TimeStampWijziging,
+    UsrCreatie,
+    UsrGeopend,
+    UsrInactief,
+    UsrWijziging,
+    VersieCreatie,
+    VersieInactief,
+    VersieWijziging
+FROM PUB.TTIMESTAMP
+	where Owning_Entity = 'TDOSINFO';
+
+store TDOSINFO into front_end\TDOSINFO.qvd;
+drop table TDOSINFO;
+
+TDOSLIJNINFO:
+SQL SELECT 
+	DatumInfo,
+    Omschrijving,
+    "record_crc",
+    CAST(TDOSLIJN_Id as varchar(20))			as TDOSLIJN_ID,
+    UsrInfo    
+//    CAST(Sequence_Id as varchar(20))			as SEQUENCE_ID,
+    Taal,    
+    CAST(TDOSLIJNINFO_Id as varchar(20))		as TDOSLIJNINFO_ID,
+    TimestampInfo,
+    CAST(TQINFO_Id as varchar(20))				as TQINFO_ID
+FROM PUB.TDOSLIJNINFO;
+
+TQINFO:
+left join (TDOSLIJNINFO)
+LOAD 
+	 TQINFO_ID			as TQINFO_ID, 
+     TQINFO_Code		as DosLijnInfo_type_code,  
+     Info_type_dut		as DosLijnInfo_type_dut, 
+     Info_type_frn		as DosLijnInfo_type_frn
+FROM
+TQINFO.qvd
+(qvd);
+
+store TDOSLIJNINFO into front_end\TDOSLIJNINFO.qvd;
+drop table TDOSLIJNINFO;
+
+timestamp:
+load
+	TDOS_ID,
+	makedate(year(TimeStampCreatie),month(TimeStampCreatie),day(TimeStampCreatie))					as TDOSCreatie,
+	UsrCreatie																						as TDOSUsrCreatie
+;
+SQL SELECT 
+//	"Owning_Entity",
+	CAST("Owning_Id" as varchar(20)) 		as  "TDOS_ID",  
+    "record_crc",
+    TimeStampCreatie,
+    TimestampGeopend,
+    TimeStampInactief,
+    TimeStampWijziging,
+    UsrCreatie,
+    UsrGeopend,
+    UsrInactief,
+    UsrWijziging,
+    VersieCreatie,
+    VersieInactief,
+    VersieWijziging
+FROM PUB.TTIMESTAMP
+	where Owning_Entity = 'TDOS';
+
+store timestamp into front_end\TDOS_timestamp.qvd;
+drop Table timestamp;
+///$tab Log
+$(vTAGOR);
+
+tt_tlog:
+SQL SELECT
+    "Owning_Entity",
+    CAST("Owning_Id" as varchar(20)) 	as  "Owning_Id",
+    "record_crc",
+    CAST("TLOG_Id" as varchar(20)) 		as  "TLOG_Id",    
+    CAST("TQLOG_Id" as varchar(20)) 	as  "TQLOG_Id",         
+    VeldNaam,
+    WaardeNieuw,
+    WaardeVorig
+FROM PUB.TLOG
+	where Owning_Entity = 'TDOS'
+	  and (VeldNaam = 'TQSTATUS_ID'
+	   or VeldNaam = 'TQSTATUS_ID_STADIUM'
+	   or VeldNaam = 'TQSTATUS_ID_ALARM'
+	   or VeldNaam = 'TQSTATUS_ID_AFBET'
+	   or VeldNaam = 'TQSTATUS_ID_KLANT'
+	   or VeldNaam = 'TQSTATUS_ID_STOP') ;
+
+timestamp:
+left join(tt_tlog)
+load
+	TLOG_Id,
+	TimeStampCreatie
+;
+SQL SELECT 
+//	"Owning_Entity",
+	CAST("Owning_Id" as varchar(20)) 		as  "TLOG_Id",  
+    "record_crc",
+    TimeStampCreatie,
+    TimestampGeopend,
+    TimeStampInactief,
+    TimeStampWijziging,
+    UsrCreatie,
+    UsrGeopend,
+    UsrInactief,
+    UsrWijziging,
+    VersieCreatie,
+    VersieInactief,
+    VersieWijziging
+FROM PUB.TTIMESTAMP
+	where Owning_Entity = 'TLOG';
+
+tlog_timestamp:
+load
+	Owning_Id,
+	TLOG_Id,
+	TimeStampCreatie,
+	if(peek(Owning_Id)=Owning_Id 
+		and floor(TimeStampCreatie)=TimeStampCreatie 
+		and peek(TimeStampCreatie)=TimeStampCreatie 
+		,peek(New_TimeStampCreatie) + (1/10000000)
+		,TimeStampCreatie
+		)													as New_TimeStampCreatie,
+	VeldNaam,
+	WaardeNieuw
+Resident tt_tlog
+	order by Owning_Id, TLOG_Id;
+	
+tlog:
+LOAD 
+	 TLOG_Id, 
+//     Owning_Entity, 
+     Owning_Id												as TDOS_ID, 
+//     record_crc, 
+//     TQLOG_Id, 
+	 $(vMode)(New_TimeStampCreatie)							as TimeStampCreatie,
+     applymap('map_status',VeldNaam)						as Status_hist, 
+     WaardeNieuw											as Status_ID_hist
+//     WaardeVorig, 
+Resident tlog_timestamp
+	group by TLOG_Id, Owning_Id, VeldNaam, WaardeNieuw;
+
+left join(tlog)
+LOAD 
+ 	TQSTATUS_ID			as Status_ID_hist,
+ 	Afgesloten			as Status_Afgesloten, 
+ 	Gestopt				as Status_Gestopt,
+   	Status_code			as Status_code_hist,  
+    Status_dut			as Status_dut_hist, 
+    Status_frn			as Status_frn_hist
+FROM
+TQSTATUS.qvd
+(qvd);
+
+store tlog into front_end\tlog.qvd;
+
+TQSTATUS:
+LOAD 
+	 trim(text(TQSTATUS_ID))	as TQSTATUS_ID
+FROM
+TQSTATUS.qvd
+(qvd)
+	where Afgesloten=1;
+
+left join(TQSTATUS)
+load
+	Owning_Id						as TDOS_ID,
+	trim(text(WaardeNieuw))			as TQSTATUS_ID,
+	floor(max(TimeStampCreatie))	as Afgesloten_date
+resident tt_tlog
+	group by Owning_Id, WaardeNieuw;
+	
+left join (Dossier)
+load Distinct
+	TDOS_ID,
+	TQSTATUS_ID,
+	Afgesloten_date
+Resident TQSTATUS;
+
+drop Table tt_tlog, tlog, TQSTATUS, tlog_timestamp;
+///$tab Agenda
+
+TJOBMX:
+SQL SELECT cast(TJOBM_Id as varchar(20)) AS TJOBM_Id,
+	Taal,
+	Omschrijving,
+	Beschrijving
+FROM PUB.TJOBMX;
+
+STORE TJOBMX INTO [front_end\TJOBMX.qvd] (qvd);
+
+DROP TABLE TJOBMX;
+
+TAGENDA:
+SQL SELECT 
+//	"record_crc",
+//    "TAGENDA_Id",
+    cast(TJOB_Id as varchar(20))	as TJOB_ID,
+    IsGeblokkeerd,
+//    "TAGENDA_Id_Hoofd",
+    Manueel,
+    TimeStampScheduled				as TIMESTAMPSCHEDULED
+FROM PUB.TAGENDA;
+
+STORE TAGENDA INTO [front_end\TAGENDA.qvd] (qvd);
+
+tt_JOB:
+SQL SELECT 
+	cast(TJOB_Id as varchar(20))		as TJOB_ID,
+//    "record_crc",
+//    "TQJOB_Id",
+    "Owning_Entity"						as OWNING_ENTITY,
+    "Owning_Id"							as OWNING_ID,
+    cast(TQSTATUS_Id as varchar(20))	as TQSTATUS_ID,
+    cast(TJOBM_Id as varchar(20))	as TJOBM_Id,
+//    "TJOBM_Id",
+    cast(TQJOBTYPE_Id as varchar(20))	as TQJOBTYPE_ID,
+//    "TUSER_Id",
+    TimeStampScheduled AS JobTimeStampScheduled,
+    TimeStampFinished AS JobTimeStampFinished,
+    Omschrijving
+//    "Owning_Entity2",
+//    "Owning_Id2",
+//    Subject
+FROM PUB.TJOB;
+
+STORE tt_JOB INTO [front_end\TJOB.qvd] (qvd);
+
+left join (TAGENDA)
+LOAD 
+	TJOB_ID,
+//    "record_crc",
+//    "TQJOB_Id",
+//    "Owning_Entity",
+    OWNING_ID					as TDOS_ID,
+    TQSTATUS_ID					as TQSTATUS_ID_JOB
+Resident tt_JOB
+  where mixmatch(OWNING_ENTITY,'tdos')>0
+    and TJOB_ID <> '$(vExcludeTJOBID)';
+    
+drop Table tt_JOB;
+
+TQSTATUS:
+left join (TAGENDA)
+LOAD 
+	 TQSTATUS_ID		as TQSTATUS_ID_JOB, 
+     Status_code		as STATUS_JOB_CODE
+FROM
+TQSTATUS.qvd
+(qvd);
+
+left join(Dossier)
+load
+	TDOS_ID,
+	MakeDate(year(TIMESTAMPSCHEDULED),month(TIMESTAMPSCHEDULED),day(TIMESTAMPSCHEDULED))	as LASTAGENDADATE
+;
+load
+	TDOS_ID,
+	max(TIMESTAMPSCHEDULED)	as TIMESTAMPSCHEDULED
+resident TAGENDA
+	where mixmatch(STATUS_JOB_CODE,'new')>0
+	  and len(trim(TIMESTAMPSCHEDULED))>0
+	group by TDOS_ID;
+
+DROP Table TAGENDA;
+///$tab GO_database
+$(vORAS);
+///$tab DA
+left join (Dossier)
+LOAD 
+	FIRMANR&'|'&BOEKJAAR&'|'&DAGBOEKNR		as %key_dagboek,
+	FIRMANR&'|'&BOEKJAAR&'|'&REKNR			as %key_AR,
+	REKNR,
+    NAAM,
+    LIB,
+    FIRMANR				as FirmaNr,
+    DAGBOEKSOORT,
+    DAGBOEKNR			as DagboekNr,
+    BOEKJAAR			as Boekjaar;
+SQL SELECT *
+FROM PUB.DA;
+
+BS:
+LOAD Distinct
+	REKNR,
+    FIRMANR,
+    DATBOEKSTUK,
+    DAGBOEKNR,
+    BOEKJAAR;
+SQL SELECT *
+FROM PUB.BS;
+
+left join(Dossier)
+load
+	FIRMANR&'|'&BOEKJAAR&'|'&DAGBOEKNR		as %key_dagboek,
+	REKNR,
+	max(DATBOEKSTUK)						as laatste_boeking
+Resident BS
+	group by 
+		REKNR,
+	    FIRMANR,
+	    DAGBOEKNR,
+	    BOEKJAAR;
+
+drop Table BS;
+
+Dossier_store:
+load
+	*,
+	if(IsNull(flag_tdospar)
+		,true()
+		,false()
+		)						as flag_no_tdospar
+Resident Dossier;
+
+store Dossier_store into front_end\Dossier.qvd;
+
+Dossier_INTRUM:
+NOCONCATENATE LOAD * RESIDENT Dossier_store WHERE [Dossier_type_dut] = 'INTRUM';
+
+STORE * FROM Dossier_INTRUM INTO [front_end\Dossier_INTRUM.qvd] (qvd);
+
+DROP TABLE Dossier_INTRUM;
+
+drop table Dossier, Dossier_store;
+
+AR:
+LOAD 
+	FIRMANR&'|'&BOEKJAAR&'|'&REKNR			as %key_AR,
+	"CD_EENHEID",
+    WSALDOVM,
+    WSALDO,
+    WLYNNR,
+    "VERWORPEN_PERC",
+    VERKOOP,
+    USERWYZ,
+    USERCRE,
+    TRANTE,
+    TIMEWYZ,
+    TIMECRE,
+    REKNR2,
+    REKNR,
+    "RECORD_CRC",
+    NAAM,
+    MUNT,
+    KORTIMPNRTRANTE,
+    KORTIMPNR,
+    JRAANTAL,
+    GROEP,
+    FIRMANR,
+    DATWYZ,
+    DATCRE,
+    DATBEW,
+    DAGBOEKNR,
+    CUDBJAVM,
+    CUDBJA,
+    CUCRJAVM,
+    CUCRJA,
+    "CD_VAK",
+    "CD_TYPE",
+    "CD_STATUS",
+    "CD_REFKLNR",
+    "CD_RECORD",
+    "CD_JAAROVER",
+    "CD_DOSSIER",
+    "CD_CENTRALIS",
+    "CD_AANTAL",
+    BUDGET,
+    BOEKJAAR,
+    "CD_VA",
+    "CD_CENTRREK",
+    "CD_UITSPLITS",
+    "CD_WAGENS",
+    "CD_VERWORPEN",
+    "CD_LIQUIDE",
+    "TGL_OPEN",
+    "CD_VERBONDEN",
+    FICHE28150,
+    "CD_VAKIC",
+    CONSREKNR,
+    WYZIGOMSC,
+    AANTVERP,
+    "REKNR_NABTW",
+    DATINACTIEF,
+    BTWPERC,
+    PERCTPRIVE,
+    PERCTVAST,
+    AFPUNTNR,
+    BEDRAGPRIVE,
+    BEWVORIGBJ,
+    INFO,
+    "DEF_VA_AFSCHR_REKNR",
+    "DEF_VA_KOST_REKNR",
+    "DEF_VA_SOORT",
+    "DEF_VA_PERC";
+SQL SELECT *
+FROM PUB.AR;
+
+store AR into front_end\AR.qvd;
+drop table AR;
+
+///$tab STDOR
+$(vSTDOR);
+
+HLPDET:
+LOAD USERWYZ,
+    USERCRE,
+    TIMEWYZ,
+    TIMECRE,
+    TABELNR,
+    TAAL,
+    OMSCHR,
+    DATWYZ,
+    DATCRE,
+    "CD_STATUS",
+    "CD_RECORD",
+    "CD_HLP";
+SQL SELECT *
+FROM STDOR.PUB.HLPDET;
+
+store HLPDET into front_end\HLPDET.qvd;
+drop table HLPDET;
+
+///$tab ORDIS
+$(vORDIS);
+//ODBC CONNECT TO [VGGE_T3-VGGE_ORDIS] (XUserId is RcVMDYVOCLZA, XPassword is NXSfBYVOCLHA);
+
+DISFLMN:
+LOAD DisId,
+    DocId,
+    ModeId,
+    MdlId,
+    Extension,
+    PathName,
+    FileName,
+    PartyId,
+    AddressId,
+    ContactId,
+    CompanyId,
+    UsrId,
+    SecurityLevel,
+    Version,
+    "record_crc",
+    UserCre,
+    DateCre,
+    TimeCre,
+    UserMod,
+    DateMod,
+    TimeMod,
+    UserLastUsed,
+    DateLastUsed,
+    TimeLastUsed,
+    TimesUsed;
+SQL SELECT *
+FROM PUB.DISFLMN;
+
+
+
+store DISFLMN into front_end\DISFLMN.qvd;
+drop table DISFLMN;
+///$tab exit
+EXIT Script;
+
+
+left join (Dossier)
+LOAD Distinct
+//	 TDOSLIJN_ID, 
+	 'x'	as flag_tdospar,
+     TDOS_ID, 
+//     TDOSPAR_ID, 
+     Flag_dossier_id
+FROM
+QVD_Tagor\front_end\TDOSPAR.qvd
+(qvd);
+///$tab Log_backup
+tt_tlog:
+SQL SELECT
+    "Owning_Entity",
+    CAST("Owning_Id" as varchar(20)) 	as  "Owning_Id",
+    "record_crc",
+    CAST("TLOG_Id" as varchar(20)) 		as  "TLOG_Id",    
+    CAST("TQLOG_Id" as varchar(20)) 	as  "TQLOG_Id",         
+    VeldNaam,
+    WaardeNieuw,
+    WaardeVorig
+FROM PUB.TLOG
+	where Owning_Entity = 'TDOS'
+	  and (VeldNaam = 'TQSTATUS_ID'
+	   or VeldNaam = 'TQSTATUS_ID_STADIUM'
+	   or VeldNaam = 'TQSTATUS_ID_ALARM'
+	   or VeldNaam = 'TQSTATUS_ID_AFBET'
+	   or VeldNaam = 'TQSTATUS_ID_KLANT'
+	   or VeldNaam = 'TQSTATUS_ID_STOP') ;
+
+ttimestamp:
+left join(tt_tlog)
+load
+	TLOG_Id,
+	TimeStampCreatie
+;
+SQL SELECT 
+//	"Owning_Entity",
+	CAST("Owning_Id" as varchar(20)) 		as  "TLOG_Id",  
+    "record_crc",
+    TimeStampCreatie,
+    TimestampGeopend,
+    TimeStampInactief,
+    TimeStampWijziging,
+    UsrCreatie,
+    UsrGeopend,
+    UsrInactief,
+    UsrWijziging,
+    VersieCreatie,
+    VersieInactief,
+    VersieWijziging
+FROM PUB.TTIMESTAMP
+	where Owning_Entity = 'TLOG';
+	
+tt_tlog_gr:
+LOAD 
+	 TLOG_Id, 
+//     Owning_Entity, 
+     Owning_Id					as TDOS_ID, 
+//     record_crc, 
+//     TQLOG_Id, 
+	 min(TimeStampCreatie)		as TimeStampCreatie,
+     VeldNaam, 
+     WaardeNieuw
+//     WaardeVorig, 
+Resident tt_tlog
+	group by TLOG_Id, Owning_Id, VeldNaam, WaardeNieuw;
+
+drop Table tt_tlog;
+
+tlog:
+load Distinct
+	TLOG_Id,
+	TDOS_ID,
+	TimeStampCreatie
+Resident tt_tlog_gr;
+
+ttVeldNaam:
+load Distinct
+	VeldNaam
+Resident tt_tlog_gr;
+
+for vVeldNo = 0 to NoOfRows('ttVeldNaam')-1
+
+	let vVeldNaam = peek('VeldNaam',$(vVeldNo),'ttVeldNaam');
+	let vLabel = 'Status_'&SubField('$(vVeldNaam)','_',3);
+	
+	left join(tlog)
+	load Distinct
+		TLOG_Id,
+		TDOS_ID,
+		TimeStampCreatie,
+		WaardeNieuw				as $(vVeldNaam)_hist
+	Resident tt_tlog_gr
+		where VeldNaam = '$(vVeldNaam)';
+		
+	left join(tlog)
+	LOAD 
+	 	TQSTATUS_ID			as $(vVeldNaam)_hist, 
+     	Status_code			as $(vLabel)_code_hist,  
+     	Status_dut			as $(vLabel)_dut_hist, 
+     	Status_frn			as $(vLabel)_frn_hist
+	FROM
+	TQSTATUS.qvd
+	(qvd);
+
+next
+
+store tlog into front_end\tlog.qvd;
+drop Table ttVeldNaam, tt_tlog_gr, tlog;
+///$tab log_backup 2
+$(vTAGOR);
+
+tt_tlog:
+SQL SELECT
+    "Owning_Entity",
+    CAST("Owning_Id" as varchar(20)) 	as  "Owning_Id",
+    "record_crc",
+    CAST("TLOG_Id" as varchar(20)) 		as  "TLOG_Id",    
+    CAST("TQLOG_Id" as varchar(20)) 	as  "TQLOG_Id",         
+    VeldNaam,
+    WaardeNieuw,
+    WaardeVorig
+FROM PUB.TLOG
+	where Owning_Entity = 'TDOS'
+	  and (VeldNaam = 'TQSTATUS_ID'
+	   or VeldNaam = 'TQSTATUS_ID_STADIUM'
+	   or VeldNaam = 'TQSTATUS_ID_ALARM'
+	   or VeldNaam = 'TQSTATUS_ID_AFBET'
+	   or VeldNaam = 'TQSTATUS_ID_KLANT'
+	   or VeldNaam = 'TQSTATUS_ID_STOP') ;
+
+timestamp:
+left join(tt_tlog)
+load
+	TLOG_Id,
+	TimeStampCreatie
+;
+SQL SELECT 
+//	"Owning_Entity",
+	CAST("Owning_Id" as varchar(20)) 		as  "TLOG_Id",  
+    "record_crc",
+    TimeStampCreatie,
+    TimestampGeopend,
+    TimeStampInactief,
+    TimeStampWijziging,
+    UsrCreatie,
+    UsrGeopend,
+    UsrInactief,
+    UsrWijziging,
+    VersieCreatie,
+    VersieInactief,
+    VersieWijziging
+FROM PUB.TTIMESTAMP
+	where Owning_Entity = 'TLOG';
+	
+tlog:
+LOAD 
+	 TLOG_Id, 
+//     Owning_Entity, 
+     Owning_Id												as TDOS_ID, 
+//     record_crc, 
+//     TQLOG_Id, 
+	 $(vMode)(TimeStampCreatie)								as TimeStampCreatie,
+     applymap('map_status',VeldNaam)						as Status_hist, 
+     WaardeNieuw											as Status_ID_hist
+//     WaardeVorig, 
+Resident tt_tlog
+	group by TLOG_Id, Owning_Id, VeldNaam, WaardeNieuw;
+
+left join(tlog)
+LOAD 
+ 	TQSTATUS_ID			as Status_ID_hist,
+ 	Afgesloten			as Status_Afgesloten, 
+ 	Gestopt				as Status_Gestopt,
+   	Status_code			as Status_code_hist,  
+    Status_dut			as Status_dut_hist, 
+    Status_frn			as Status_frn_hist
+FROM
+TQSTATUS.qvd
+(qvd);
+
+store tlog into front_end\tlog.qvd;
+
+TQSTATUS:
+LOAD 
+	 trim(text(TQSTATUS_ID))	as TQSTATUS_ID
+FROM
+TQSTATUS.qvd
+(qvd)
+	where Afgesloten=1;
+
+left join(TQSTATUS)
+load
+	Owning_Id						as TDOS_ID,
+	trim(text(WaardeNieuw))			as TQSTATUS_ID,
+	floor(max(TimeStampCreatie))	as Afgesloten_date
+resident tt_tlog
+	group by Owning_Id, WaardeNieuw;
+	
+left join (Dossier)
+load Distinct
+	TDOS_ID,
+	TQSTATUS_ID,
+	Afgesloten_date
+Resident TQSTATUS;
+
+drop Table tt_tlog, tlog, TQSTATUS;

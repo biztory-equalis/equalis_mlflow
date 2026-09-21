@@ -1,0 +1,17 @@
+.venv
+.env
+.env.example
+rsa_key.p8
+rsa_key.pub
+*.pem
+*.key
+
+__pycache__
+*.pyc
+.ipynb_checkpoints
+**/.ipynb_checkpoints
+
+.git
+.DS_Store
+
+data

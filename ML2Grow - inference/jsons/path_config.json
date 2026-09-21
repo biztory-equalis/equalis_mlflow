@@ -1,0 +1,14 @@
+{
+    "dossier_path": "/data/Dossiers_Training_Set.csv",
+    "verweerder_path": "/data/Verweerder_Training_Set.csv",
+    "tcbb_path": "/data/TCBB_Training_Set.csv",
+    "soort_beslag_path": "/data/TCBB_Soort_Beslag_Training_Set.csv",
+    "type_beslag_path": "/data/TCBB_Type_Beslag_Training_Set.csv",
+    "verweerder_link_path": "/data/TCBB_Verweerder_Link_Training_Set.csv",
+    "aanlegger_path": "/data/Aanlegger_Training_Set.csv",
+    "path_geojson": "/data/sh_statbel_statistical_sectors_20210101.geojson",
+    "path_tax_sector": "/data/TF_PSNL_INC_TAX_SECTOR.txt",
+    "path_vastgoed": "/data/vastgoed_2010_9999.txt",
+    "path_adress": "/data/KboOpenData_0092_2021_10_Full/address.csv",
+    "path_enterprice": "/data/KboOpenData_0092_2021_10_Full/enterprise.csv"
+}

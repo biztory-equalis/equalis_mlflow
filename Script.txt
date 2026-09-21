@@ -1,0 +1,834 @@
+﻿///$tab Main
+/**
+	Kantoor - Main
+	Bart Valgaerts (At Once)
+	bart.valgaerts@atonce.be
+**/
+SET ThousandSep='.';
+SET DecimalSep=',';
+SET MoneyThousandSep='.';
+SET MoneyDecimalSep=',';
+SET MoneyFormat='€ #.##0,00;€ -#.##0,00';
+SET TimeFormat='h:mm:ss';
+SET DateFormat='D/MM/YYYY';
+SET TimestampFormat='D/MM/YYYY h:mm:ss[.fff]';
+SET MonthNames='jan;feb;mrt;apr;mei;jun;jul;aug;sep;okt;nov;dec';
+SET DayNames='ma;di;wo;do;vr;za;zo';
+
+/**
+	Kleurenschema
+**/
+
+LET vLichtGrijs = RGB(245,245,245);
+LET vMediumGrijs = RGB(196,196,196);
+LET vDonkerGrijs = RGB(36,36,36);
+LET vZwart = RGB(46,46,46);
+LET vWit = RGB(255,255,255);
+
+//LET vExportFolder = 'C:\At Once\Van Noten\QLIKVIEWT3\DATA\QVD_TAGOR';
+LET vExportFolder = 'D:\QLIKVIEWT3_EQUQLIK01\DATA\QVD_TAGOR';
+LET vImportFolder = '..\Import\Excel';
+
+Last_Reload_QVD:
+LOAD DISTINCT 
+	FileTime( ) as Last_Reload_QVD 
+FROM 
+[D:\QLIKVIEWT3_EQUQLIK01\DATA\Reload_TAGOR3_V2.qvw];
+
+MapDossierVolgorde:
+MAPPING LOAD [Dossier Status Code],
+	[Volgorde]
+FROM [$(vImportFolder)\VolgordeDossierStatus.xls] (biff, embedded labels, table is VolgordeStatus$);
+
+MapHoofdgroep:
+MAPPING LOAD [Nature_booking_type_code], 
+     [Hoofdgroep]
+FROM [$(vImportFolder)\Kostengroepen.xls] (biff, embedded labels, table is Sheet1$);
+
+MapSubgroep:
+MAPPING LOAD [Nature_booking_type_code], 
+     [Subgroep]
+FROM [$(vImportFolder)\Kostengroepen.xls] (biff, embedded labels, table is Sheet1$);
+
+HuidigeDossierStatus_Map:
+MAPPING LOAD 
+//	 [Dossier Status], 
+     [Dossier Status Code], 
+     [Afgesloten Dossier]
+FROM
+[$(vImportFolder)\DossierStatusOpenGesloten.xlsx]
+(ooxml, embedded labels, table is OpenGesloten);
+///$tab Solvabiliteit
+/**
+	Kantoor - Solvabiliteit Dossier
+	Bart Valgaerts (At Once)
+	bart.valgaerts@atonce.be
+	
+	Berekening van de solvabiliteit van het hoofddossier
+	op basis van alle verweerders. Indien er minstens 1 
+	verweerderis met een insolvabiliteit, wordt het hele 
+	dossier op insolvabel gezet
+**/
+
+//Berekening Solvabiliteit Dossier
+TempSolvabiliteit:
+NOCONCATENATE LOAD DISTINCT [TDOS_ID] AS [Dossier ID],
+	[TDOS_ID_HOOFD] AS [Hoofddossier ID]
+FROM [$(vExportFolder)\front_end\Dossier.qvd] (qvd);
+RIGHT JOIN LOAD DISTINCT [TDOS_ID] AS [Dossier ID],
+	[TPAR_ID]
+FROM [$(vExportFolder)\front_end\TDOSPAR.qvd] (qvd)
+WHERE [Type_code]='VERW';
+LEFT JOIN LOAD [TPAR_ID],
+	[Solvabiliteit_Code_Financieel]
+FROM [$(vExportFolder)\front_end\TPAR.qvd] (qvd);
+LEFT JOIN LOAD [TPAR_ID],
+	[TQSOLVABILITEIT_ID]
+FROM [$(vExportFolder)\front_end\TPARSOLVABILITEIT.qvd] (qvd)
+WHERE [Gebruikt]=1;
+LEFT JOIN LOAD [TQSOLVABILITEIT_ID],
+	1 AS [Aantal Insolvabel],
+	[Solvability_dut] AS [Solvabiliteit Subtype]
+FROM [$(vExportFolder)\TQSOLVABILITEIT.qvd] (qvd)
+WHERE [Solvability_dut] <>'Solvabel';
+
+SolvabiliteitDossier:
+NOCONCATENATE LOAD [Hoofddossier ID],
+	If(Sum([Aantal Insolvabel]) > 0,If(Count(DISTINCT [Solvabiliteit Subtype]) >=2,'Insolvabel',MaxString([Solvabiliteit Subtype])),'Solvabel') AS [Solvabiliteit Dossier],
+	Max([Solvabiliteit_Code_Financieel]) AS [Dossier Solvabiliteit Code]
+RESIDENT TempSolvabiliteit
+GROUP BY [Hoofddossier ID];
+
+DROP TABLE TempSolvabiliteit;
+
+
+// Solvabiliteit Verweerder
+
+SolvabiliteitVerweerder:
+LOAD 
+	[TPAR_ID]		AS	[Verweerder ID],
+	[TQSOLVABILITEIT_ID]
+FROM [$(vExportFolder)\front_end\TPARSOLVABILITEIT.qvd] (qvd)
+Where Gebruikt = 1
+// Toegevoegd omdat er vuile data in verweerder data zit, id's beginnende met 154 en die niet zijn gekoppeld aan een dossier
+AND mid([TPAR_ID],1,3) <> '154';
+
+
+
+LEFT JOIN (SolvabiliteitVerweerder)
+LOAD 
+	TQSOLVABILITEIT_ID, 
+//     TQBOODSCHAP_ID, 
+//     Solvability_code, 
+//     Solvability_type, 
+//     Solvabitiy_message_bg_color, 
+//     Solvabitiy_message_fg_color, 
+	IF (
+		Solvability_type = 'A',
+     	Solvability_dut	
+     )						as [Solvabiliteit Verweerder Adres],
+     IF (
+		Solvability_type = 'F',
+     	Solvability_dut	
+     )						as [Solvabiliteit Verweerder Financieel]
+//     Solvability_frn
+FROM
+[$(vExportFolder)\TQSOLVABILITEIT.qvd] (qvd)
+;
+
+///$tab Dossiers
+//Logica om dossiers zonder verweerder te identificeren en te skippen
+TempDossiers_1:
+LOAD DISTINCT 
+	[TDOS_ID] AS [Hoofddossier ID]
+FROM [$(vExportFolder)\front_end\Dossier.qvd] (qvd)
+WHERE [TDOS_ID_HOOFD]=[TDOS_ID]
+;
+
+DossierPartijen: 
+LOAD DISTINCT [TPAR_ID],
+	[Type_code] AS [Partij Type],
+	[Type_dut],
+	[TDOS_ID] AS [Hoofddossier ID],
+	[TDOSPAR_ID]
+FROM [$(vExportFolder)\front_end\TDOSPAR.qvd] (qvd)
+WHERE Exists([Hoofddossier ID],[TDOS_ID]) AND Not IsNull([TDOS_ID]);
+
+PartijTypeInDossier:
+LOAD
+	[Hoofddossier ID],
+	concat([Partij Type],';')						as PartijTypeInDossier
+RESIDENT DossierPartijen
+GROUP BY [Hoofddossier ID]
+;
+
+LEFT JOIN (DossierPartijen)
+LOAD
+	[Hoofddossier ID],
+	substringcount ( PartijTypeInDossier, 'VERW' ) as AantalVerweerdersInDossier,
+	PartijTypeInDossier
+RESIDENT PartijTypeInDossier;
+
+DROP TABLE PartijTypeInDossier;
+
+DossierPartijen_TEMP:
+NOCONCATENATE LOAD
+	*
+RESIDENT DossierPartijen
+WHERE AantalVerweerdersInDossier > 0 //AND len(AantalVerweerdersInDossier) <> 0 
+;
+
+DROP TABLE DossierPartijen;
+DROP TABLE TempDossiers_1;
+
+
+//Inlezen data Hoofddossiers
+TempDossiers:
+LOAD DISTINCT [TDOS_ID] AS [Hoofddossier ID],
+	[TUSER_ID],
+	Date([DatumCreatie]) AS [CreatieDatum Hoofddossier],
+	If(Date([DatumCreatie]) <= MakeDate(Year([DatumCreatie]),Num(Month(Today())),Num(Day(Today()))),1,0) AS [Creatie YTD],
+	If(Year([DatumCreatie]) >= (Year(Today())-7) AND Year([DatumCreatie]) <= Year(Today()),Year([DatumCreatie]),Null()) AS [Creatie Jaar],
+	If(Year([DatumCreatie]) >= (Year(Today())-7) AND Year([DatumCreatie]) <= Year(Today()),'Q' & Ceil(Month([DatumCreatie])/3),Null()) AS [Creatie Kwartaal],
+	If(Year([DatumCreatie]) >= (Year(Today())-7) AND Year([DatumCreatie]) <= Year(Today()),Month([DatumCreatie]),Null()) AS [Creatie Maand],
+	Week([DatumCreatie]) AS [Creatie Week],
+	If(Year([DatumCreatie]) >= (Year(Today())-7) AND Year([DatumCreatie]) <= Year(Today()),Date(MonthStart([DatumCreatie]),'MMM-YYYY'),Null()) AS [Creatie Maand Jaar],
+	ApplyMap('MapDossierVolgorde',[Status_code],99) AS [Dossier Status Volgorde],
+	[Status_code] AS [Dossier Status Code],
+	If(IsNull([Status_dut]),'Geen Status',[Status_dut]) AS [Dossier Status],
+	ApplyMap('HuidigeDossierStatus_Map',[Status_code])			as DossierOpenGesloten,
+	[Status_klant_dut] AS [Klant Stadium],
+	Left([Status_klant_dut],1) AS [Klant Stadium Selectie],
+	[Status_stadium_dut] AS [Dossier Stadium],
+	[DossierNaam] AS [Dossier Naam],
+	[DoorstortenCode] AS [Doorstorting Code],
+	[Dossier_type_code] AS [Dossier Soort Code],
+	[Dossier_type_dut] AS [Dossier Soort],
+	If(Match([Status_code],'V_AANM','AFBOK','V_UITV'),'Lopend',If(Match([Status_code],'SCHORSING','VLA','WOI','IWT'),'In wacht',If(Match([Status_code],'DGZB','REGLE','STPOPD','GESM','GZ','C','TERU'),'Afgehandeld',Null()))) AS [Berekening GDW]
+FROM [$(vExportFolder)\front_end\Dossier.qvd] (qvd)
+//WHERE [TDOS_ID_HOOFD]=[TDOS_ID]
+WHERE Exists([Hoofddossier ID],[TDOS_ID]) AND Not IsNull([TDOS_ID]);
+;
+
+//Statusdatum Hoofddossier
+LEFT JOIN LOAD [TDOS_ID] AS [Hoofddossier ID],
+	Date(Max([Dossier_date])) AS [Dossier Statusdatum],
+	If(Year(Max([Dossier_date])) >= (Year(Today())-7) AND Year(Max([Dossier_date])) <= Year(Today()),'Q' & Ceil(Month(Max([Dossier_date]))/3),Null()) AS [Status Kwartaal],
+	If(Year(Max([Dossier_date])) >= (Year(Today())-7) AND Year(Max([Dossier_date])) <= Year(Today()),Year(Max([Dossier_date])),Null()) AS [Status Jaar],
+	If(Year(Max([Dossier_date])) >= (Year(Today())-7) AND Year(Max([Dossier_date])) <= Year(Today()),Month(Max([Dossier_date])),Null()) AS [Status Maand],
+	If(Date(Max([Dossier_date])) <= MakeDate(Year(Max([Dossier_date])),Num(Month(Today())),Num(Day(Today()))),1,0) AS [Status YTD],
+	Week(Max([Dossier_date])) AS [Status Week]
+FROM [$(vExportFolder)\front_end\TDOSDATUM.qvd] (qvd) 
+WHERE [Date_code] = 'STS'
+GROUP BY [TDOS_ID];
+//Statusdatum Klant
+LEFT JOIN LOAD [TDOS_ID] AS [Hoofddossier ID],
+	Date(Max([Dossier_date])) AS [Dossier Statusdatum Klant]
+FROM [$(vExportFolder)\front_end\TDOSDATUM.qvd] (qvd) 
+WHERE [Date_code] = 'KLTSTS'
+GROUP BY [TDOS_ID];
+//Toevoegen Solvabiliteit Hoofddossier
+LEFT JOIN LOAD * RESIDENT SolvabiliteitDossier;
+//Opzoeken Dossierbeheerder
+LEFT JOIN LOAD [TUSER_ID], 
+     [TPAR_ID] AS [Dossierbeheerder ID]
+FROM [$(vExportFolder)\front_end\TUSER.qvd] (qvd);
+LEFT JOIN LOAD [TPAR_ID] AS [Dossierbeheerder ID], 
+     PurgeChar(Upper([Naam] & ' ' & [VoorNaam]),' ') AS [Dossierbeheerder Naam]
+FROM [$(vExportFolder)\front_end\TPAR.qvd] (qvd);
+//Ophalen van dossierlijnen
+LEFT JOIN LOAD DISTINCT [TDOS_ID_HOOFD] AS [Hoofddossier ID],
+	[TDOSLIJN_ID] AS [Dossierlijn ID],
+	[TDOS_ID] AS [Dossier ID],
+	If([TDOS_ID_HOOFD]=[TDOS_ID],1,0) AS [Hoofddossier Flag],
+	Date([DatumCreatie]) AS [DatumCreatie],
+	[Bedrag],
+	[BedragBTW],
+	[Referte],
+	Date([DatumBoeking]) AS [DatumBoeking],
+	If(Date([DatumBoeking]) <= MakeDate(Year([DatumBoeking]),Num(Month(Today())),Num(Day(Today()))),1,0) AS [Boeking YTD],
+	If(Year([DatumBoeking]) >= (Year(Today())-7) AND Year([DatumBoeking]) <= Year(Today()),Year([DatumBoeking]),Null()) AS [Boeking Jaar],
+	If(Year([DatumBoeking]) >= (Year(Today())-7) AND Year([DatumBoeking]) <= Year(Today()),'Q' & Ceil(Month([DatumBoeking])/3),Null()) AS [Boeking Kwartaal],
+	If(Year([DatumBoeking]) >= (Year(Today())-7) AND Year([DatumBoeking]) <= Year(Today()),Month([DatumBoeking]),Null()) AS [Boeking Maand],
+	Week([DatumBoeking]) AS [Boeking Week],
+	[Gefixeerd],
+	Date([DatumCreatie_DOSLIJN]) AS [Creatiedatum Dossierlijn],
+	If(Match([Booking_code],'HSMI','HSZI','DW'),1,0) AS [Dossier Factuur Flag],
+	If(Match([Booking_code],'HSMI','HSZI','DW'),RecNo()) AS [Dossier Factuur ID],
+	If(Match([Booking_code],'HSMI','HSZI','DW'),Date([DatumBoeking])) AS [Dossier Factuur Creatiedatum],
+	[Booking_code],
+	[Booking_dut],
+	[Kost_dut] AS [Kost],
+	[Kost_code],
+	ApplyMap('MapHoofdgroep',[Nature_booking_type_code],'Niet gedefinieerd') AS [Aard Boeking Hoofdgroep],
+	ApplyMap('MapSubgroep',[Nature_booking_type_code],'Niet gedefinieerd') AS [Aard Boeking Subgroep],
+	[Nature_booking_type_code] AS [Aard Boeking],
+	[Nature_booking_type_dut] AS [Aard Boeking Omschr],
+	If(Match([Nature_booking_type_code],'100726','67','70002','DGVCFR','DGE_100139','100140','Dag_100892','DHV_100109','REF_100346','Dag_100856','DGVREV_100','Dag_100844','Kos_100711','Kos_100838','_80171','RDGV_656','_100605','100726','AANMCROS',/*dwangbevel vanaf hier */'BETart413','dwKop_500168','68') AND [Gefixeerd]=1 AND [DatumBoeking] >= [DatumCreatie],1,0) AS [Gerechtelijk],
+	If(Match([Nature_booking_type_code],'100726','67','70002','DGVCFR','DGE_100139','100140','Dag_100892','DHV_100109','REF_100346','Dag_100856','DGVREV_100','Dag_100844','Kos_100711','Kos_100838','_80171','RDGV_656','_100605','100726','AANMCROS',/*dwangbevel vanaf hier */'BETart413','dwKop_500168','68') AND [Gefixeerd]=1 AND [DatumBoeking] >= [DatumCreatie],Date([DatumBoeking]),Null()) AS [Datum Dagvaarding]
+FROM [$(vExportFolder)\front_end\Dossier.qvd] (qvd);
+
+
+
+//Vorderingsparameter
+LEFT JOIN LOAD [Dossier Soort Code],
+	[Vorderingsparameter]
+FROM [$(vImportFolder)\Vorderingsparameter.xlsx] (ooxml, embedded labels, table is Sheet1);
+
+DROP TABLE SolvabiliteitDossier;
+
+Dossiers:
+NOCONCATENATE LOAD *,
+	If([Dossier Status Code]='TERU' AND ([Solvabiliteit Dossier] = 'Solvabel' OR IsNull([Solvabiliteit Dossier])),'Zonder Code',[Solvabiliteit Dossier]) AS [Dossier Solvabiliteit],
+	If([Booking_code] = 'BETBTK' AND [Creatiedatum Dossierlijn] <= [CreatieDatum Hoofddossier],1,If([Booking_code] = 'BETBTK' AND [Creatiedatum Dossierlijn] > [CreatieDatum Hoofddossier],0)) AS [BetalingVoorInterventieFlag],
+	If([Dossier Factuur Flag]=1,If(Num([CreatieDatum Hoofddossier]-[Dossier Factuur Creatiedatum]) > 0,Num([CreatieDatum Hoofddossier]-[Dossier Factuur Creatiedatum]),0),Null()) AS [Dossier Factuur Ouderdom]
+RESIDENT TempDossiers;
+LEFT JOIN LOAD DISTINCT [Hoofddossier ID],
+	If(Sum([Gerechtelijk]) > 0,'Gerechtelijk','Minnelijk') AS [Gerechterlijk Minnelijk]
+RESIDENT TempDossiers
+GROUP BY [Hoofddossier ID];
+LEFT JOIN LOAD DISTINCT [Hoofddossier ID],
+	Date(Min([Datum Dagvaarding])) AS [Actiedatum]
+RESIDENT TempDossiers
+GROUP BY [Hoofddossier ID];
+
+DROP TABLE TempDossiers;
+
+DROP FIELDS [TUSER_ID],[Gerechtelijk],[Datum Dagvaarding] FROM Dossiers;
+
+
+//INTRUM - TRIPLE A Screeningcodes en Dossier Info Algemeen
+//LEFT JOIN 
+Dossier_Screeningcodes:
+LOAD DISTINCT
+[TDOS_ID] AS [Hoofddossier ID],
+[DosInfo_type_dut]									as [Dossier Info Type],
+[Omschrijving]										as [Dossier Info Omschrijving],
+	IF (
+		[DosInfo_type_dut] = 'Intrum: Screening',
+		[Omschrijving] 
+	)												AS [INTRUM Screeningcode],
+	IF (
+		[DosInfo_type_dut] = 'Triple A: behandelingwijze',
+		[Omschrijving] 
+	)												AS [TRIPLE A Screeningcode]
+FROM [$(vExportFolder)\front_end\TDOSINFO.qvd] (qvd)
+//WHERE [DosInfo_type_dut] = 'Intrum: Screening' OR [DosInfo_type_dut] = 'Triple A: behandelingwijze'
+;
+
+
+
+
+
+
+
+
+/*
+	Status Groepering Dossier
+*/
+
+//Factuurbedrag
+TempStatusGroepering:
+NOCONCATENATE LOAD [Hoofddossier ID] RESIDENT Dossiers WHERE [Berekening GDW]= 'Afgehandeld' AND [Dossier Status Code] = 'STPOPD';
+LEFT JOIN LOAD [Hoofddossier ID],
+	Sum([Bedrag]) AS [Dossier Bedrag Factuur]
+RESIDENT Dossiers
+WHERE [Berekening GDW]= 'Afgehandeld' AND [Dossier Status Code] = 'STPOPD' AND Match([Booking_code],'HSZI','HSMI','DW')
+GROUP BY [Hoofddossier ID];
+//Doorstorting beschikbaar
+LEFT JOIN LOAD [Hoofddossier ID],
+	Sum([Bedrag]) AS [Dossier Doorgestort]
+RESIDENT Dossiers
+WHERE [Berekening GDW]= 'Afgehandeld' AND [Dossier Status Code] = 'STPOPD' AND [Booking_code] ='DRSBES'
+GROUP BY [Hoofddossier ID];
+//Betaling na interventie
+LEFT JOIN LOAD [Hoofddossier ID],
+	Sum([Bedrag]) AS [Dossier Betaald Na Interventie]
+RESIDENT Dossiers
+WHERE [Berekening GDW]= 'Afgehandeld' AND [Dossier Status Code] = 'STPOPD' AND [Booking_code] ='BETBTK' AND [BetalingVoorInterventieFlag] = 0
+GROUP BY [Hoofddossier ID];
+
+StatusGroepering:
+NOCONCATENATE LOAD [Hoofddossier ID],
+	Sum([Dossier Bedrag Factuur]) AS [Dossier Bedrag Factuur],
+	Sum([Dossier Doorgestort]) + Sum([Dossier Betaald Na Interventie]) AS [Dossier Bedrag Reeds Geind]
+RESIDENT TempStatusGroepering
+GROUP BY [Hoofddossier ID];
+LEFT JOIN LOAD [Hoofddossier ID],
+	[Solvabiliteit Dossier],
+	[Vorderingsparameter]
+RESIDENT Dossiers;
+
+DROP TABLE TempStatusGroepering;
+
+LEFT JOIN (Dossiers)
+LOAD [Hoofddossier ID],
+	If([Dossier Bedrag Factuur] <= [Dossier Bedrag Reeds Geind]
+		,'Geregeld bij klant'
+		,If([Dossier Bedrag Factuur] < [Vorderingsparameter] AND NOT IsNull([Vorderingsparameter])
+			,'Bedrag te klein om te dagvaarden'
+			,If([Solvabiliteit Dossier] <> 'Solvabel'
+				,'Insolvabel'
+				,'Gestopt door klant'
+			)
+		)
+	) AS [Status Groepering]
+RESIDENT StatusGroepering;
+
+DROP TABLE StatusGroepering;
+
+//Dossier2:
+//NOCONCATENATE LOAD *,
+//	If([Berekening GDW]= 'Afgehandeld' AND [Dossier Status Code] = 'STPOPD',If(IsNull([Status Groepering Temp]),'Gestopt door klant',[Status Groepering Temp])) AS [Status Groepering]
+//RESIDENT Dossier;
+//
+//DROP TABLE Dossier;
+//
+//RENAME TABLE Dossier2 TO Dossier;
+//
+//DROP FIELD [Status Groepering Temp] FROM Dossier;
+
+/*
+	Successrate Dossier
+*/
+
+LEFT JOIN (Dossiers)
+LOAD DISTINCT [Hoofddossier ID],
+	If([Dossier Status Code] = 'REGLE'
+		,'Geregeld bij GDW'
+		,If(([Berekening GDW]='Afgehandeld' AND [Dossier Status Code] = 'TERU') OR ([Berekening GDW]='Afgehandeld' AND [Dossier Status Code]='STPOPD' AND [Status Groepering]='Insolvabel')
+			,'Insolvabel'
+			,[Status Groepering]
+		)
+	) AS [Dossier Successrate]
+RESIDENT Dossiers;
+
+Dates:
+LOAD Min([DatumCreatie]) AS [DatumCreatie],
+	Min([DatumBoeking]) AS [DatumBoeking]
+RESIDENT Dossiers;
+
+LET vMinCreatie = Peek('DatumCreatie',0,'Dates');
+
+DROP TABLE Dates;
+
+Team:
+LOAD PurgeChar(Upper([User]),' ') AS [Dossierbeheerder Naam],
+	[Team],
+	If(IsNull([Subteam]),[Team],[Subteam]) AS [Subteam]
+FROM [$(vImportFolder)\Team.xlsx] (ooxml, embedded labels, table is Sheet1);
+///$tab Dossier Dimensies
+/**
+	Kantoor - Dossier Dimensies
+	Bart Valgaerts (At Once)
+	bart.valgaerts@atonce.be
+	
+	Sommige dimensies geven dubbels per Dossier,
+	deze worden nu apart ingelezen om dubbels te vermijden
+**/
+
+DossierGroep:
+LOAD DISTINCT [TDOS_ID] AS [Hoofddossier ID],
+	[Group_dut] AS [Dossier Groep]
+FROM [$(vExportFolder)\TDOSGROEP.qvd] (qvd)
+WHERE Exists([Hoofddossier ID],[TDOS_ID]);
+
+TempDossierAgenda:
+LOAD [TJOB_ID],  
+	[OWNING_ID] AS [Dossier ID], 
+	[TQSTATUS_ID], 
+	[TQJOBTYPE_ID],
+	[TJOBM_ID],
+	Timestamp([JOBTIMESTAMPSCHEDULED]) AS [Dossier Agenda Begin], 
+	TimeStamp([JOBTIMESTAMPFINISHED]) AS [Dossier Agenda Einde], 
+	[Omschrijving] AS [Dossier Agenda Omschrijving]
+FROM [$(vExportFolder)\front_end\TJOB.qvd] (qvd)
+WHERE [OWNING_ENTITY] = 'TDOS'
+AND Exists([Dossier ID],[OWNING_ID]);
+LEFT JOIN LOAD [TJOBM_ID], 
+     [Omschrijving] AS [Dossier Agenda Actie]
+FROM [$(vExportFolder)\front_end\TJOBMX.qvd] (qvd)
+WHERE [Taal] = 'Dut';
+LEFT JOIN LOAD [TQSTATUS_ID], 
+	[Status_dut] AS [Dossier Agenda Status]
+FROM [$(vExportFolder)\TQSTATUS.qvd] (qvd)
+WHERE [Status_dut] = 'Nieuw';
+LEFT JOIN LOAD [TJOB_ID], 
+	Date([TIMESTAMPSCHEDULED]) AS [Dossier Agenda Datum],
+	[IsGeblokkeerd]
+FROM [$(vExportFolder)\front_end\TAGENDA.qvd] (qvd);
+
+DossierAgenda:
+NOCONCATENATE LOAD [Dossier ID],
+	[Dossier Agenda Omschrijving],
+	[Dossier Agenda Status],
+	[Dossier Agenda Datum],
+	[Dossier Agenda Actie]
+RESIDENT TempDossierAgenda
+WHERE /*[IsGeblokkeerd]=0 AND */NOT IsNull([Dossier Agenda Datum]);
+
+DROP TABLE TempDossierAgenda;
+
+Klantreferentie:
+LOAD [TDOS_ID] AS [Hoofddossier ID], 
+     [TDOSPAR_ID]
+FROM [$(vExportFolder)\front_end\TDOSPAR.qvd] (qvd)
+WHERE Exists([Hoofddossier ID],[TDOS_ID])
+AND [Type_code]='KLT';
+LEFT JOIN LOAD DISTINCT [TDOSPAR_ID],
+     [Referentie] AS [Dossier Klant Referentie]
+FROM [$(vExportFolder)\front_end\TDOSREF.qvd] (qvd)
+WHERE [Ref_code] = 'PAR' AND [TDOSREF_SEQUENCE_ID]=1;
+
+DROP FIELDS [TDOSPAR_ID] FROM Klantreferentie;
+
+DossierSaldo:
+NOCONCATENATE LOAD [TDOS_ID] AS [Hoofddossier ID], 
+     Bedrag AS [Saldo Bedrag], 
+     [Saldo_code] AS [Saldo Code], 
+     [Saldo_dut] AS [Saldo Omschrijving]
+FROM [$(vExportFolder)\front_end\TDOSSALDO.qvd] (qvd)
+WHERE Exists([Hoofddossier ID],[TDOS_ID]);
+///$tab Doorlooptijden
+Doorlooptijden_Basis:
+LOAD DISTINCT
+	 //Status_ID_hist, 
+     //TLOG_Id, 
+     TDOS_ID					as [Hoofddossier ID], 
+     TimeStampCreatie,
+     //Status_hist, 
+    // Status_Afgesloten, 
+     //Status_Gestopt, 
+     Status_code_hist, 
+     Status_dut_hist//, 
+    // Status_frn_hist
+FROM
+[$(vExportFolder)\front_end\tlog.qvd] (qvd)
+WHERE Exists([Hoofddossier ID],[TDOS_ID])
+;
+
+LEFT JOIN (Doorlooptijden_Basis)
+LOAD
+	[Hoofddossier ID],
+	[Dossier Naam]   						as tlog_DossierNaam,
+	[Dossier Status Code]					as LaatsteStatusDossier,
+	[CreatieDatum Hoofddossier]				as StartDatumBerekening,
+	DossierOpenGesloten						as DossierOpenGeslotenTEMP
+RESIDENT Dossiers;
+
+
+
+
+LEFT JOIN (Doorlooptijden_Basis)
+LOAD DISTINCT
+	 //Status_ID_hist, 
+     //TLOG_Id, 
+     
+     // [Hoofddossier ID] //heeft meerdere dosID's bij 3 dosnamen
+     tlog_DossierNaam, 
+     Timestamp(Max(TimeStampCreatie))					as DatumLaatsteStatusWijziging
+     //Status_hist, 
+    // Status_Afgesloten, 
+     //Status_Gestopt, 
+     //Status_code_hist, 
+    // Status_dut_hist//, 
+    // Status_frn_hist
+RESIDENT Doorlooptijden_Basis
+GROUP BY tlog_DossierNaam;  //[Hoofddossier ID]
+
+//LEFT JOIN (Dossiers)
+Doorlooptijden:
+LOAD DISTINCT
+	[Hoofddossier ID],
+	DatumLaatsteStatusWijziging,
+
+//	tlog_DossierNaam,
+//	LaatsteStatusDossier,
+//	StartDatumBerekening,
+//	DossierOpenGeslotenTEMP,
+	
+	IF (
+		LaatsteStatusDossier = 'ENKEL' OR LaatsteStatusDossier = 'ADOS',
+		1,
+		IF (
+			DossierOpenGeslotenTEMP = 1,
+			FLOOR(DatumLaatsteStatusWijziging) - NUM(StartDatumBerekening) + 1,
+			if (
+				DossierOpenGeslotenTEMP = 0,
+				Num(Today()) - NUM(StartDatumBerekening) + 1
+			)
+		)
+	)													as AantalDagenOpen
+	//DatumLaatsteStatusWijziging
+RESIDENT Doorlooptijden_Basis
+WHERE TimeStampCreatie = DatumLaatsteStatusWijziging;
+
+DROP TABLE Doorlooptijden_Basis;
+
+// dossierstatus code van dossier overhalen om laatste status te bepalen in geval van meerdere statussen op laatst bekende datum
+
+
+///$tab Partijen
+//// wordt nu als eerste stap uitgevoerd in tab dossiers owvenkel dossiers met verweerders meenemen
+//DossierPartijen_TEMP: 
+//LOAD DISTINCT [TPAR_ID],
+//	[Type_code] AS [Partij Type],
+//	[Type_dut],
+//	[TDOS_ID] AS [Hoofddossier ID],
+//	[TDOSPAR_ID]
+//FROM [$(vExportFolder)\front_end\TDOSPAR.qvd] (qvd)
+//WHERE Exists([Hoofddossier ID],[TDOS_ID]) AND Not IsNull([TDOS_ID]);
+
+LEFT JOIN (DossierPartijen_TEMP)
+LOAD DISTINCT [TPAR_ID],
+	[Naam],
+	[VoorNaam],
+	Trim([Naam]&' '&[VoorNaam]) AS [Volledige Naam],
+	Year(Today()) - Year([DatumGeboorte]) AS [Partij Leeftijd],
+	//If(IsNull([KBOnr]) AND IsNull([BTWNr]),'B2C','B2B') AS [B2B/B2C]
+	PartijVorm,
+	Legal_entity_code						as RechtsVorm,
+	BTWNr,
+	KBOnr,
+	Rijksregisternr
+FROM [$(vExportFolder)\front_end\TPAR.qvd] (qvd);
+
+
+// Nieuwe berekening B2B/B2C
+DossierPartijen:
+LOAD
+	[Partij Type],
+	[Type_dut],
+	[Hoofddossier ID],
+	[TDOSPAR_ID],
+	[TPAR_ID],
+	[Naam],
+	[VoorNaam],
+	[Volledige Naam],
+	RechtsVorm,
+	BTWNr,
+	KBOnr,
+	Rijksregisternr,
+	[Partij Leeftijd],
+	IF (
+		[Partij Type] = 'VERW',
+		IF (
+			PartijVorm = 'M' OR PartijVorm = 'H',
+			'B2B',
+			IF (
+				PartijVorm = 'F',
+				'B2C'
+			)
+		)
+	)									as [B2B/B2C]
+RESIDENT DossierPartijen_TEMP;
+
+DROP TABLE DossierPartijen_TEMP;
+
+TempKlant:
+NOCONCATENATE LOAD DISTINCT [Hoofddossier ID],
+	[Volledige Naam] AS [Klant],
+	[TPAR_ID]
+RESIDENT DossierPartijen
+WHERE [Partij Type] = 'KLT';
+//Creatiedatum Hoofddossier per dossier toevoegen
+LEFT JOIN LOAD [Hoofddossier ID],
+	Date([CreatieDatum Hoofddossier]) AS [CreatieDatum Eerste Dossier]
+RESIDENT Dossiers;
+
+Klant:
+NOCONCATENATE LOAD [Klant],
+	Date(Min([CreatieDatum Eerste Dossier])) AS [CreatieDatum Eerste Dossier]
+RESIDENT TempKlant
+GROUP BY [Klant];
+LEFT JOIN LOAD [Klant],
+	[Hoofddossier ID],
+	[TPAR_ID]
+RESIDENT TempKlant;
+LEFT JOIN LOAD [TPAR_ID],
+	1 AS [ConfraterKlant Flag]
+FROM [D:\QlikView Storage\Import\Excel\ConfraterStatistiek.xlsx] (ooxml, embedded labels, table is Lijst);
+
+DROP TABLE TempKlant;
+
+DROP FIELD [TPAR_ID] FROM Klant;
+
+VerweerderTemp:
+NOCONCATENATE LOAD DISTINCT [Hoofddossier ID],
+	[TPAR_ID] AS [Verweerder ID],
+	[Volledige Naam] AS [Verweerder],
+	[B2B/B2C] AS [Verweerder B2B/B2C],
+	[Partij Leeftijd] AS [Verweerder Leeftijd],
+	RechtsVorm			as [Verweerder RechtsVorm],
+	BTWNr				as [Verweerder BTWNr],
+	KBOnr				as [Verweerder KBONr],
+	Rijksregisternr		as [Verweerder Rijksregisternr],
+	If([Partij Leeftijd] < 11,'0 - 10',If([Partij Leeftijd] < 21,'11 - 20',If([Partij Leeftijd] < 31,	'21 - 30',If([Partij Leeftijd] < 41,'31 - 40',If([Partij Leeftijd] < 51,'41 - 50',If([Partij Leeftijd] < 61,'51 - 60',If([Partij Leeftijd] < 71,'61 - 70',If([Partij Leeftijd] < 81,'71 - 80',If([Partij Leeftijd] < 91,'81 - 90',If([Partij Leeftijd] < 101,'91 - 100','100 +')))))))))) AS [Verweerder Leeftijdscategorie]
+RESIDENT DossierPartijen
+WHERE [Partij Type] = 'VERW';
+LEFT JOIN LOAD [TPAR_ID] AS [Verweerder ID],
+	[Street_nr] AS [Verweerder Nr],
+	[Street_bus_nr] AS [Verweerder Busnr],
+	If(IsNull([Street_dut]),'Onbekend',[Street_dut]) AS [Verweerder Straat TEMP],
+	If(IsNull([Adress_dut]),'Onbekend',[Adress_dut]) AS [Verweerder Adres],
+	If(IsNull([City_dut]),'Onbekend',[City_dut]) AS [Verweerder Gemeente],
+	If(Isnull([Province_dut]),'Onbekend',[Province_dut]) AS [Verweerder Provincie],
+	If(IsNull([Region_dut]),'Buitenland',[Region_dut]) AS [Verweerder Gewest TEMP],
+	If(IsNull([Country_dut]),'Onbekend',[Country_dut]) AS [Verweerder Land],
+	Upper(If(IsNull([District_dut]),'Onbekend',[District_dut])) AS [Verweerder Arrondissement],
+	[Zipcode] AS [Verweerder Postcode]
+FROM [$(vExportFolder)\front_end\Adress.qvd] (qvd) WHERE [flag_primary_adres] = -1;
+LEFT JOIN LOAD Upper([Arrondissement]) AS [Verweerder Arrondissement],
+	[Gerechtelijk arrondissment] AS [Verweerder Gerechtelijk Arrondissement]
+FROM [D:\QlikView Storage\Import\Excel\Gerechtelijk arrondissementen.xls] (biff, embedded labels, table is Sheet1$);
+
+Verweerder:
+LOAD
+	*,
+	UPPER(replace(replace([Verweerder Straat],' ',''),'-','')) &'-'& [Verweerder Nr] &'-'& UPPER([Verweerder Postcode]) &'-'& UPPER([Verweerder Gemeente]) 			as %Gevangenis_Key
+;
+LOAD
+	*,
+	IF (
+     	[Verweerder Straat TEMP] = 'Sint Jacobstraat (DEN)',
+     	'Sint Jacobstraat',
+     	[Verweerder Straat TEMP]
+     )																							as [Verweerder Straat], 
+	IF (IsNull([Verweerder Gewest TEMP]), 'Adres onbekend',[Verweerder Gewest TEMP])			as [Verweerder Gewest],
+	IF (
+		[Verweerder Gewest TEMP] = 'Buitenland',
+		[Verweerder Land]
+	)																							as [Verweerder Buitenland],
+	IF (
+		[Verweerder Gewest TEMP] = 'Buitenland',
+		[Verweerder Gemeente]
+	)																							as [Verweerder Gemeente Buitenland],
+	IF (
+		[Verweerder Gewest TEMP] = 'Buitenland',
+		[Verweerder Straat TEMP]
+	)																							as [Verweerder Straat Buitenland]
+RESIDENT VerweerderTemp;
+
+DROP TABLE VerweerderTemp;
+DROP FIELDS [Verweerder Gewest TEMP], [Verweerder Straat TEMP];
+
+Gevangenis:
+LOAD 
+     Gevangenis, 
+     UPPER(replace(replace(Straat,' ',''),'-','')) &'-'& Nummer &'-'& UPPER(Postcode) &'-'& UPPER(Gemeente) 			as %Gevangenis_Key,
+     Straat								as Gevangenis_Straat, 
+     Nummer								as Gevangenis_Nummer, 
+     Postcode							as Gevangenis_Postcode, 
+     Gemeente							as Gevangenis_Gemeente
+FROM
+[D:\QlikView Storage\Import\Excel\Adressen gevangenissen.xlsx]
+(ooxml, embedded labels, table is Blad1);
+
+Aanlegger:
+NOCONCATENATE LOAD DISTINCT [Hoofddossier ID],
+	[Volledige Naam] AS [Aanlegger]
+RESIDENT DossierPartijen
+WHERE [Partij Type] = 'AANL';
+
+Advocaat:
+NOCONCATENATE LOAD DISTINCT [Hoofddossier ID],
+	[Volledige Naam] AS [Advocaat]
+RESIDENT DossierPartijen
+WHERE [Partij Type] = 'ADVO';
+
+Confrater:
+NOCONCATENATE LOAD DISTINCT [Hoofddossier ID],
+	[Volledige Naam] AS [Confrater]
+RESIDENT DossierPartijen
+WHERE [Partij Type] = 'C_CONF';
+
+///$tab Kaart
+/**
+	Kantoor - Kaart
+	Bart Valgaerts (At Once)
+	bart.valgaerts@atonce.be
+**/
+Coordinaten:
+LOAD Left([input],4) AS [Verweerder Postcode],
+	Left([input],4) AS [Postcode_Coordinaten],
+	Replace([latitude],'.',',') AS [latitude],
+	Replace([longitude],'.',',') AS [longitude],
+	1 AS [CoordinatenFlag]
+FROM [D:\QlikView Storage\Export\Coordinaten.qvd] (qvd)
+WHERE IsNum(Left([input],1)) = -1;
+LEFT JOIN LOAD DISTINCT Left([input],4) AS [Verweerder Postcode],
+	Mid([input],6) AS [Gemeente_Post]
+FROM [D:\QlikView Storage\Export\Gemeentes.qvd] (qvd);
+LEFT JOIN LOAD [Gewest],
+	[Provincie],
+	[%Postcode_VerweerderKey] AS [Verweerder Postcode]
+FROM [D:\QlikView Storage\Export\Gewest.qvd] (qvd);
+///$tab Kalender
+/**
+	Kantoor - Kalender
+	Bart Valgaerts (At Once)
+	bart.valgaerts@atonce.be
+	
+	Aanmaak 2 kalender voor de zichtbare selectie van Datum Van - Tot - Van/Tot
+**/
+
+LET vMinDate = Num(YearStart(AddYears(Today(),-6)));
+LET vMaxDate = Num(Today());
+
+TempCal:
+LOAD Date($(vMinDate) + RowNo() - 1) AS [TempDate]
+AUTOGENERATE $(vMaxDate) - $(vMinDate) + 1; 
+	
+SET vMinDate=;
+SET vMaxDate=;	
+
+Van:
+NOCONCATENATE LOAD [TempDate] AS [Datum Van]
+RESIDENT TempCal;
+
+Tot:
+NOCONCATENATE LOAD [TempDate] AS [Datum Tot]
+RESIDENT TempCal;
+
+
+DROP TABLE TempCal;
+///$tab STORE
+STORE Verweerder INTO Verweerder.qvd;
+///$tab MapQuest
+/***
+	Februari 2016
+	Van Noten - MapQuest
+	Bart Valgaerts (At Once)
+***/
+
+//gmap_key = 'SRXWPHl02xpEGeKiRtO4hfMdGzsn5w7w';
+gmap_key = 'QdQN3regw0fqRtE9Uvj64uW3jQw3K7UO';
+max_zoom_level = 17;
+def_zoom_level = 4;
+def_map_size = 600;
+
+// Variables required for calculating map. No need to change these
+var_pi180		= '=pi()/180';
+var_lat_offset	= '0';
+var_mc2			= '=256*pow(2,$(var_zoom))';
+var_mc1			= '=256*pow(2,($(var_zoom)-1))';
+var_mid_lat		= '=median(latitude)'; //'=min(latitude)+(1+var_lat_offset)*((max(latitude)-min(latitude))/2)';
+var_mid_long	= '=median(longitude)';//'=min(longitude)+(max(longitude)-min(longitude))/2';
+var_zoom		= '=If(max(aggr(if(max( round(256*pow(2,(%zoom_level -1)))+( longitude *((256*pow(2,%zoom_level
+					))/360)) )-min( round(256*pow(2,(%zoom_level -1)))+( longitude *((256*pow(2,%zoom_level ))/360)) )
+					<def_map_size AND max((256*pow(2,(%zoom_level-1)))+((0.5*log((1+(sin((latitude)*pi()/180)))/(1-
+					(sin((latitude)*pi()/180)))))*((-256*pow(2,%zoom_level))/(2*pi()))))-min((256*pow(2,(%zoom_level-
+					1)))+((0.5*log((1+(sin((latitude)*pi()/180)))/(1-(sin((latitude)*pi()/180)))))*((-
+					256*pow(2,%zoom_level))/(2*pi()))))<def_map_size,%zoom_level,null()),%zoom_level))>def_zoom_level,
+					max(aggr(if(max( round(256*pow(2,(%zoom_level -1)))+( longitude *((256*pow(2,%zoom_level ))/360)) )-min(
+					round(256*pow(2,(%zoom_level -1)))+( longitude *((256*pow(2,%zoom_level ))/360)) ) <def_map_size AND
+					max((256*pow(2,(%zoom_level-1)))+((0.5*log((1+(sin((latitude)*pi()/180)))/(1-(sin((latitude)*pi()/180)))))*((-
+					256*pow(2,%zoom_level))/(2*pi()))))-min((256*pow(2,(%zoom_level-
+					1)))+((0.5*log((1+(sin((latitude)*pi()/180)))/(1-(sin((latitude)*pi()/180)))))*((-
+					256*pow(2,%zoom_level))/(2*pi()))))<def_map_size,%zoom_level,null()),%zoom_level)),def_zoom_level)';
+
+// Field required for calcualting best zoom level
+%zoom_level:
+Load RecNo( ) as %zoom_level autogenerate(max_zoom_level);
+
+exit script;

@@ -1,0 +1,27 @@
+DATASET: verweerders
+GENERATED_AT: 2026-09-21
+HASH_ID: 6d4c9f22a9366503
+----------------------------------------
+SQL QUERY:
+SELECT 
+    hoofddossier_id, 
+    verweerder,
+    verweerder_id,
+    verweerder_b2b_b2c,
+    verweerder_leeftijd,
+    verweerder_leeftijdscategorie,
+    gevangenis_key,
+    verweerder_postcode,
+    verweerder_straat,
+    verweerder_straat_clean,
+    verweerder_nr,
+    verweerder_adres,
+    verweerder_gemeente,
+    verweerder_provincie,
+    verweerder_gewest,
+FROM VERWEERDER
+WHERE verweerder_id IN (SELECT MIN(verweerder_id) AS verweerder_id
+FROM VERWEERDER
+GROUP BY hoofddossier_id
+HAVING COUNT(DISTINCT verweerder_id) = 1 AND MIN(verweerder_id) != 0)
+----------------------------------------
