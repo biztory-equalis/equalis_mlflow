@@ -1,8 +1,8 @@
 .venv
 .env
 .env.example
-rsa_key.p8
-rsa_key.pub
+
+
 *.pem
 *.key
 

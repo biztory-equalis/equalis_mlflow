@@ -16,7 +16,12 @@ pip install -r requirements.txt
 
 Snowflake credentials are read from environment variables via `python-dotenv` (expects a `.env` file, not present in repo — see `.env.example` for the template): `SF_USER`, `SF_ACCOUNT`, `SF_DATABASE`, `SF_SCHEMA`, `SF_WAREHOUSE`, `SF_ROLE` (see `config/snowflake_config.py`).
 
-Auth is either key-pair (preferred — `SF_PRIVATE_KEY_PATH`, optionally `SF_PRIVATE_KEY_PASSPHRASE`) or password (`SF_PASSWORD`, legacy fallback, may be disabled on accounts that have moved off single-factor password auth). If `SF_PRIVATE_KEY_PATH` is set, `SnowflakeConfig` reads and DER-encodes the PEM key and passes it via `connect_args` on the SQLAlchemy engine (`SnowflakeClient`) rather than the connection URL. Never commit the private key file or `.env` — both are gitignored.
+`SnowflakeConfig` tries three auth methods, in order:
+1. **OAuth via SPCS session token** — when `/snowflake/session/token` exists (Snowpark Container Services injects this into every running container), it's used automatically with no user/private key needed; identity comes from the token. This is how `inference.py` authenticates when deployed as an SPCS job. Falls back to the `SNOWFLAKE_ACCOUNT`/`SNOWFLAKE_HOST` env vars SPCS auto-injects if the `SF_*` equivalents aren't set.
+2. **Key-pair auth** (preferred for local dev — `SF_PRIVATE_KEY_PATH`, optionally `SF_PRIVATE_KEY_PASSPHRASE`). `SnowflakeConfig` reads and DER-encodes the PEM key and passes it via `connect_args` on the SQLAlchemy engine (`SnowflakeClient`) rather than the connection URL.
+3. **Password** (`SF_PASSWORD`, legacy fallback, may be disabled on accounts that have moved off single-factor password auth).
+
+Never commit the private key file or `.env` — both are gitignored.
 
 There is no CLI entry point — the pipeline is driven from `inference.ipynb`, which:
 1. Instantiates `DataConstructor(TCBB_enable=False, address_enabled=True)` — builds Snowflake client, query executor, snapshot manager, and the three dataset readers.

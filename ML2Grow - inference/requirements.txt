@@ -1,6 +1,6 @@
-sqlalchemy
-snowflake-sqlalchemy
-snowflake-connector-python
+sqlalchemy==2.0.54
+snowflake-sqlalchemy==1.11.1
+snowflake-connector-python[pandas]
 cryptography
 pandas
 python-dotenv
