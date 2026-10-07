@@ -35,7 +35,21 @@ order:
 | Locally | **Key pair** | `SF_PRIVATE_KEY_PATH` (and `SF_PRIVATE_KEY_PASSPHRASE` if the key has one) in `.env` |
 | Locally (legacy) | Password | `SF_PASSWORD` (probably blocked by MFA) |
 
-To set up key-pair auth locally:
+#### Snowflake users
+
+| User | Used for |
+|---|---|
+| `ML2GROW` | Running the pipeline locally (`SF_USER` in `.env`, `ANALYST` role) |
+| `BIZTORYADMIN` | Logging in to the Snowflake image registry to push the Docker image |
+
+The container job itself uses neither, because inside SPCS it uses the OAuth
+token. **The key pair files (`rsa_key.p8` / `rsa_key.pub`) for both users are
+in our 1Password.** Get them from there instead of generating new ones.
+Generating new ones would replace the registered public key and break access
+for everyone else.
+
+Only for a new user: generate a key pair, register it, and upload it to
+1Password:
 
 ```bash
 # generate a key pair (unencrypted here; add a passphrase if you prefer)

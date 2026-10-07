@@ -95,10 +95,28 @@ for a script that runs without anyone at the keyboard. `SnowflakeConfig`
 | Locally | **Key pair** | `SF_PRIVATE_KEY_PATH` (plus `SF_PRIVATE_KEY_PASSPHRASE` if the key is encrypted) in `.env` |
 | Locally (legacy) | Password | `SF_PASSWORD` (most likely blocked by MFA) |
 
-You also need the key pair to log in to the Snowflake image registry when you
-push the Docker image ([section 4](#4-build-and-push-the-docker-image)).
+### Snowflake users
 
-Generate a key pair and register it on your Snowflake user:
+We use two Snowflake users. Both authenticate with a key pair:
+
+| User | Used for |
+|---|---|
+| `ML2GROW` | Running the pipeline **locally** (`inference.py` / `inference.ipynb`). This is the `SF_USER` in `.env`. It uses the `ANALYST` role, which has access to the source data. |
+| `BIZTORYADMIN` | **Deploying**: logging in to the Snowflake image registry to push the Docker image ([section 4](#4-build-and-push-the-docker-image)). |
+
+The job itself doesn't use either user's key. Inside SPCS it authenticates
+with the injected OAuth token and runs under the `ANALYST` role.
+
+**The key pair files (`rsa_key.p8` / `rsa_key.pub`) for these users are
+stored in our 1Password.** Download them from there and put them next to
+`.env` (or point `SF_PRIVATE_KEY_PATH` at them). Don't generate new ones,
+because that would replace the public key registered on the user and break
+access for everyone else.
+
+### Setting up a key pair for a new user
+
+Only needed when you add a new user. Generate a key pair, register it on the
+Snowflake user, and upload both files to 1Password:
 
 ```bash
 openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt
